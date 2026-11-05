@@ -9,6 +9,12 @@ from google.genai import types
 PROJECT = "unsaid-devfest"
 LOCATION = "global"
 MODEL = "gemini-3.8-flash"
+# translate だけ軽いモデルに替えて速度を比べられるようにしておく（例: Flash-Lite 系）
+TRANSLATE_MODEL = MODEL
+# 1回の待ち時間の上限と、超えたときの再試行回数。
+# 実測では普段 2〜7 秒、まれに 40〜70 秒かかる外れ値があったため、待たずに打ち直す
+TIMEOUT_SEC = 12
+RETRIES = 1
 BASE = Path(__file__).parent
 
 # 言語を増やすときはここに1行足すだけ（プロンプトは変更不要）
@@ -43,23 +49,46 @@ def _lang(code):
     return f"{code} ({LANGS.get(code, code)})"
 
 
-def _call(system_file, schema_file, payload):
+def _client_():
     global _client
     if _client is None:
-        _client = genai.Client(vertexai=True, project=PROJECT, location=LOCATION)
+        _client = genai.Client(
+            vertexai=True,
+            project=PROJECT,
+            location=LOCATION,
+            http_options=types.HttpOptions(timeout=TIMEOUT_SEC * 1000),  # ミリ秒
+        )
+    return _client
+
+
+def _call(system_file, schema_file, payload, model=MODEL):
     start = time.time()
-    res = _client.models.generate_content(
-        model=MODEL,
-        # 入力は JSON で渡す。システムプロンプトが言語に依存せず常に同じなので、暗黙キャッシュも効きやすい
-        contents=json.dumps(payload, ensure_ascii=False),
-        config=types.GenerateContentConfig(
-            system_instruction=_load(system_file),
-            response_mime_type="application/json",
-            response_json_schema=_load(schema_file),
-            thinking_config=types.ThinkingConfig(thinking_level="low"),
-        ),
-    )
-    return json.loads(res.text), time.time() - start
+    last_err = None
+    for attempt in range(RETRIES + 1):
+        try:
+            res = _client_().models.generate_content(
+                model=model,
+                # 入力は JSON で渡す。システムプロンプトが言語に依存せず常に同じなので、暗黙キャッシュも効きやすい
+                contents=json.dumps(payload, ensure_ascii=False),
+                config=types.GenerateContentConfig(
+                    system_instruction=_load(system_file),
+                    response_mime_type="application/json",
+                    response_json_schema=_load(schema_file),
+                    thinking_config=types.ThinkingConfig(thinking_level="low"),
+                ),
+            )
+            out = json.loads(res.text)
+            u = res.usage_metadata
+            # 遅い回の原因切り分け用：思考トークンが多いのか、待たされているだけなのか
+            out["_meta"] = {
+                "attempt": attempt + 1,
+                "thoughts": getattr(u, "thoughts_token_count", None),
+                "out_tokens": getattr(u, "candidates_token_count", None),
+            }
+            return out, time.time() - start
+        except Exception as e:  # タイムアウト・429・JSON 崩れ（まれ）をまとめて再試行
+            last_err = e
+    raise last_err
 
 
 def analyze(utterance, patient_lang, doctor_lang="ja"):
@@ -85,7 +114,8 @@ def translate(original, source_lang, target_lang, direction, clarification=None)
     return _call(
         "prompts/translate_system.txt",
         "schemas/translate.json",
-        {
+        model=TRANSLATE_MODEL,
+        payload={
             "direction": direction,
             "source_lang": _lang(source_lang),
             "target_lang": _lang(target_lang),
@@ -93,3 +123,11 @@ def translate(original, source_lang, target_lang, direction, clarification=None)
             "clarification": clarification,
         },
     )
+
+
+def warm_up():
+    """サーバー起動時に1回呼んで、最初の呼び出しが遅い問題をデモ前に済ませておく。"""
+    try:
+        analyze("I have a headache.", "en")
+    except Exception:
+        pass
