@@ -1,0 +1,88 @@
+{
+  "type": "object",
+  "properties": {
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "symptom",
+              "onset",
+              "frequency",
+              "severity",
+              "medication",
+              "allergy",
+              "other"
+            ]
+          },
+          "negated": {
+            "type": "boolean"
+          },
+          "uncertain": {
+            "type": "boolean"
+          },
+          "time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "kind",
+          "negated",
+          "uncertain"
+        ]
+      }
+    },
+    "needs_clarification": {
+      "type": "boolean"
+    },
+    "clarifications": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "ui_type": {
+            "type": "string",
+            "enum": [
+              "choice",
+              "text"
+            ]
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "target",
+          "question",
+          "ui_type",
+          "options"
+        ]
+      }
+    },
+    "english": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "facts",
+    "needs_clarification",
+    "clarifications",
+    "english"
+  ]
+}
