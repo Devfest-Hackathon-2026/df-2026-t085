@@ -27,10 +27,14 @@ Rules:
   "sometimes", "a few days", and their equivalents in any language.
 - Words whose possible meanings are medically different are targets (for example "dizzy": spinning, lightheaded, or unsteady).
 - Uncertainty the patient expressed is information, not ambiguity. Keep it and do not ask about it.
+- Body parts the patient named in everyday words ("stomach", "belly", "chest", "head") are NOT targets.
+  Narrowing down the exact location is new information that the doctor finds out by looking and asking.
 - Ask at most ONE question per utterance. If several parts are vague, choose the one that would be most dangerous if misunderstood.
+  When a vague time or frequency expression is present, prefer it over other targets.
 
 Question format:
-- target: the exact substring copied from the utterance.
+- target: copied character for character from the utterance (same words, same order). Do not paraphrase it
+  (for example, if the patient said "the last few days", write "the last few days", not "a few days").
 - question and options: written ONLY in patient_lang. Short, plain words for someone who may be unwell, anxious,
   and not fluent in reading. Never use doctor_lang in them.
 - ui_type "choice": 2 to 4 mutually exclusive options that cover the plausible meanings, phrased from the patient's

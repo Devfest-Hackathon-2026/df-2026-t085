@@ -1,4 +1,5 @@
 """UNSAID の Gemini 呼び出し（analyze / translate）。Cloud Run からもそのまま import して使う想定。"""
+import difflib
 import json
 import time
 from pathlib import Path
@@ -88,6 +89,9 @@ def _call(system_file, schema_file, payload, model=MODEL):
             return out, time.time() - start
         except Exception as e:  # タイムアウト・429・JSON 崩れ（まれ）をまとめて再試行
             last_err = e
+            # 何で失敗したかを残す（タイムアウトか 429 か）。デモ前に原因を見るため
+            print(f"  [retry] attempt {attempt + 1} failed after {time.time() - start:.1f}s: "
+                  f"{type(e).__name__}: {str(e)[:120]}")
     raise last_err
 
 
@@ -102,8 +106,27 @@ def analyze(utterance, patient_lang, doctor_lang="ja"):
     out["clarifications"] = out.get("clarifications", [])[:1]
     out["needs_clarification"] = bool(out["clarifications"])
     for c in out["clarifications"]:
+        snapped = _snap_target(c["target"], utterance)
+        if snapped != c["target"]:
+            c["target_raw"] = c["target"]  # モデルが言い換えた元の値（テストで警告表示）
+            c["target"] = snapped
         c["fixed_options"] = FIXED_OPTIONS.get(patient_lang, FIXED_OPTIONS["en"])
     return out, sec
+
+
+def _snap_target(target, utterance):
+    """target が原文にそのまま無いとき（言い換えられたとき）、原文の中で一番長く一致する部分に寄せる。
+
+    UI は target で原文をハイライトするので、原文に存在する文字列であることを保証したい。
+    """
+    if target in utterance:
+        return target
+    i = utterance.lower().find(target.lower())
+    if i >= 0:
+        return utterance[i:i + len(target)]
+    m = difflib.SequenceMatcher(None, utterance.lower(), target.lower()).find_longest_match()
+    snapped = utterance[m.a:m.a + m.size].strip(" ,.。、")
+    return snapped if len(snapped) >= 2 else target
 
 
 def translate(original, source_lang, target_lang, direction, clarification=None):

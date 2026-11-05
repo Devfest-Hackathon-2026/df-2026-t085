@@ -138,6 +138,8 @@ def view(out):
             yield f"fact[{f['kind']}{flags}] {f['text']} / {f['doctor_gloss']}"
         for q in out["clarifications"]:
             yield f"Q({q['ui_type']}) [{q['target']}] {q['question']} -> {q['options']}"
+            if "target_raw" in q:
+                yield f"   ※ target をコードで補正: {q['target_raw']!r} -> {q['target']!r}"
     else:
         yield f"訳: {out['translation']}"
         yield f"逆訳: {out['back_translation']}"
