@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "properties": {
+    "translation": { "type": "string" },
+    "back_translation": { "type": "string" },
+    "note": { "type": "string" }
+  },
+  "required": ["translation", "back_translation", "note"]
+}
