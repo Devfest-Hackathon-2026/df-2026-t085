@@ -1,8 +1,10 @@
 """UNSAID の Gemini 呼び出し（analyze / translate）。Cloud Run からもそのまま import して使う想定。"""
 import difflib
 import json
+import os
 import random
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from google import genai
@@ -21,6 +23,11 @@ RETRIES = 1
 # 少しずつ間隔を空けて（1→2→4秒＋揺らぎ）最大 RETRIES_429 回まで再試行する。5xx も同じ扱い
 RETRIES_429 = 4
 BACKOFF_BASE_SEC = 1.0
+# 患者の待ち時間対策（docs/ai-pipeline.md「待ち時間を縮める」）
+#   split : 確認質問（clarify）と facts を別々の呼び出しにして並列に投げる。患者が待つのは出力の短い clarify だけ
+#   single: 従来どおり1回の呼び出しで facts と確認質問をまとめて作る（品質が落ちたらこちらに戻す）
+# Cloud Run の環境変数で切り替えられる: --update-env-vars ANALYZE_MODE=single
+ANALYZE_MODE = os.environ.get("ANALYZE_MODE", "split")
 BASE = Path(__file__).parent
 
 # 言語を増やすときはここに1行足すだけ（プロンプトは変更不要）
@@ -116,13 +123,11 @@ def _call(system_file, schema_file, payload, model=MODEL):
             time.sleep(wait)
 
 
-def analyze(utterance, patient_lang, doctor_lang="ja"):
-    """患者の発言 → facts と確認質問（最大1つ、患者の言語）。"""
-    out, sec = _call(
-        "prompts/analyze_system.txt",
-        "schemas/analyze.json",
-        {"patient_lang": _lang(patient_lang), "doctor_lang": _lang(doctor_lang), "utterance": utterance},
-    )
+def _payload(utterance, patient_lang, doctor_lang):
+    return {"patient_lang": _lang(patient_lang), "doctor_lang": _lang(doctor_lang), "utterance": utterance}
+
+
+def _fix_clarifications(out, utterance, patient_lang):
     # 念のためコード側でも最大1問を保証する
     out["clarifications"] = out.get("clarifications", [])[:1]
     out["needs_clarification"] = bool(out["clarifications"])
@@ -132,6 +137,49 @@ def analyze(utterance, patient_lang, doctor_lang="ja"):
             c["target_raw"] = c["target"]  # モデルが言い換えた元の値（テストで警告表示）
             c["target"] = snapped
         c["fixed_options"] = FIXED_OPTIONS.get(patient_lang, FIXED_OPTIONS["en"])
+    return out
+
+
+def clarify(utterance, patient_lang, doctor_lang="ja"):
+    """確認質問だけ（最大1つ、患者の言語）。出力が短いので速い。患者が待つのはこの呼び出し。"""
+    out, sec = _call("prompts/clarify_system.txt", "schemas/clarify.json",
+                     _payload(utterance, patient_lang, doctor_lang))
+    return _fix_clarifications(out, utterance, patient_lang), sec
+
+
+def facts(utterance, patient_lang, doctor_lang="ja"):
+    """facts だけ（医師画面の補助表示）。患者は待たないので、確認質問の後に届いてよい。"""
+    return _call("prompts/facts_system.txt", "schemas/facts.json",
+                 _payload(utterance, patient_lang, doctor_lang))
+
+
+def analyze_single(utterance, patient_lang, doctor_lang="ja"):
+    """従来の1回呼び出し（facts と確認質問をまとめて作る）。ANALYZE_MODE=single のとき使う。"""
+    out, sec = _call("prompts/analyze_system.txt", "schemas/analyze.json",
+                     _payload(utterance, patient_lang, doctor_lang))
+    return _fix_clarifications(out, utterance, patient_lang), sec
+
+
+_pool = ThreadPoolExecutor(max_workers=16)
+
+
+def submit(fn, *args):
+    """Gemini 呼び出しを裏で始める（main.py が clarify / facts / 先回り翻訳を並列に投げる）。"""
+    return _pool.submit(fn, *args)
+
+
+def analyze(utterance, patient_lang, doctor_lang="ja"):
+    """患者の発言 → facts と確認質問（最大1つ、患者の言語）。test.py 用に両方そろえて返す。
+
+    split のときの sec は「確認質問が出るまで」（＝患者の待ち時間）。facts の時間は _meta に入れる。
+    """
+    if ANALYZE_MODE == "single":
+        return analyze_single(utterance, patient_lang, doctor_lang)
+    f_facts = submit(facts, utterance, patient_lang, doctor_lang)
+    out, sec = clarify(utterance, patient_lang, doctor_lang)
+    f_out, f_sec = f_facts.result()
+    out["facts"] = f_out["facts"]
+    out["_meta"] = {"clarify": out["_meta"], "facts": {**f_out["_meta"], "sec": round(f_sec, 1)}}
     return out, sec
 
 

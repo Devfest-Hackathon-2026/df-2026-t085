@@ -1,0 +1,47 @@
+{
+  "type": "object",
+  "properties": {
+    "needs_clarification": {
+      "type": "boolean"
+    },
+    "clarifications": {
+      "type": "array",
+      "maxItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "ui_type": {
+            "type": "string",
+            "enum": [
+              "choice",
+              "text"
+            ]
+          },
+          "options": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "target",
+          "question",
+          "ui_type",
+          "options"
+        ]
+      }
+    }
+  },
+  "required": [
+    "needs_clarification",
+    "clarifications"
+  ]
+}

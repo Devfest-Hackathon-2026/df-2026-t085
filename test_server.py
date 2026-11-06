@@ -67,6 +67,16 @@ def fake_analyze(text, patient_lang, doctor_lang="ja"):
             "needs_clarification": bool(clars), "clarifications": clars}, 0.1
 
 
+def fake_clarify(text, patient_lang, doctor_lang="ja"):
+    out, sec = fake_analyze(text, patient_lang, doctor_lang)
+    out.pop("facts")
+    return out, sec
+
+
+def fake_facts(text, patient_lang, doctor_lang="ja"):
+    return {"facts": fake_analyze(text, patient_lang, doctor_lang)[0]["facts"]}, 0.1
+
+
 calls = []
 
 
@@ -83,7 +93,8 @@ store = {
     S + "/messages/m3": {"from": "doctor", "original": "1日3回飲んでください。", "status": "analyzing"},
 }
 main._db = FakeDB(store)
-unsaid_ai.analyze, unsaid_ai.translate, unsaid_ai.warm_up = fake_analyze, fake_translate, lambda: None
+unsaid_ai.analyze_single, unsaid_ai.translate, unsaid_ai.warm_up = fake_analyze, fake_translate, lambda: None
+unsaid_ai.clarify, unsaid_ai.facts = fake_clarify, fake_facts
 main.app.dependency_overrides[main.current_uid] = lambda: "patient"
 client = TestClient(main.app)
 fails = 0
@@ -103,6 +114,8 @@ m = lambda i: store[S + "/messages/" + i]
 
 r = post("/analyze", "m1")
 check("確認質問あり → clarifying", r.status_code == 200 and m("m1")["status"] == "clarifying")
+check("確認質問ありなら先回りの翻訳は書かない", m("m1")["translation"] is None)
+check("facts も後から書き足される", m("m1")["facts"][0]["doctor_gloss"] == "頭痛")
 check("clarification.answer は null で待つ", m("m1")["clarification"]["answer"] is None)
 check("答える前の /translate は 409", post("/translate", "m1").status_code == 409)
 m("m1")["clarification"]["answer"] = {"type": "option", "text": "1-3 days"}  # 患者の端末が書く
@@ -113,6 +126,7 @@ check("2回目の /analyze は 409", post("/analyze", "m1").status_code == 409)
 
 r = post("/analyze", "m2")
 check("確認質問なし → そのまま confirmed", m("m2")["status"] == "confirmed" and m("m2")["clarification"] is None)
+check("確認質問なし → 先回りの翻訳が入る", m("m2")["translation"]["lang"] == "ja" and m("m2")["facts"])
 
 r = post("/translate", "m3")
 check("医師の発言 → sent", m("m3")["status"] == "sent" and m("m3")["translation"]["lang"] == "en")
@@ -120,11 +134,20 @@ check("医師の発言は doctor_to_patient", calls[-1][0] == "doctor_to_patient
 check("医師の発言に /analyze は 400", post("/analyze", "m3").status_code == 400)
 
 store[S + "/messages/m4"] = {"from": "patient", "original": "I feel dizzy.", "status": "analyzing"}
-unsaid_ai.analyze = lambda *a: (_ for _ in ()).throw(RuntimeError("boom"))
+boom = lambda *a: (_ for _ in ()).throw(RuntimeError("boom"))
+unsaid_ai.clarify = boom
 check("Gemini 失敗 → 502", post("/analyze", "m4").status_code == 502)
 check("失敗したら status=error", m("m4")["status"] == "error")
-unsaid_ai.analyze = fake_analyze
+unsaid_ai.clarify, unsaid_ai.facts = fake_clarify, boom
 check("error からやり直せる", post("/analyze", "m4").status_code == 200 and m("m4")["status"] == "confirmed")
+check("facts だけ失敗しても発言は止めない（facts=[]）", m("m4")["facts"] == [])
+unsaid_ai.facts = fake_facts
+
+store[S + "/messages/m5"] = {"from": "patient", "original": "I've had a headache for a while.", "status": "analyzing"}
+unsaid_ai.ANALYZE_MODE = "single"
+check("ANALYZE_MODE=single でも同じ結果", post("/analyze", "m5").status_code == 200
+      and m("m5")["status"] == "clarifying" and m("m5")["facts"])
+unsaid_ai.ANALYZE_MODE = "split"
 
 main.app.dependency_overrides[main.current_uid] = lambda: "stranger"
 check("メンバー以外は 403", post("/analyze", "m2").status_code == 403)
@@ -141,7 +164,7 @@ check("患者の音声 → 文字が返る", r.status_code == 200 and r.json()["
 check("患者の音声は patientLang で聞く", heard[-1] == "en")
 tx("doctor")
 check("医師の音声は doctorLang で聞く", heard[-1] == "ja")
-check("文字にしただけでは Firestore に書かない", len(store) == 5)
+check("文字にしただけでは Firestore に書かない", len(store) == 6)
 check("空の音声は 400", tx("patient", b"").status_code == 400)
 check("大きすぎる音声は 413", tx("patient", b"x" * (main.MAX_AUDIO_BYTES + 1)).status_code == 413)
 check("speaker が不正なら 422", tx("nurse").status_code == 422)
