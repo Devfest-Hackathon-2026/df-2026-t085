@@ -29,7 +29,7 @@ API のレスポンスを使わなくても、結果は同じメッセージに�
 |---|---|---|---|
 | POST | `/analyze` | 患者の発言を作った直後 | 200。status は `clarifying` か `confirmed` |
 | POST | `/translate` | 患者: `clarification.answer` を書いた後 ／ 医師: 発言を作った直後 | 200。患者は `confirmed`、医師は `sent` |
-| GET | `/healthz` | 動作確認 | `{"ok": true}` |
+| GET | `/health` | 動作確認 | `{"ok": true}` |
 
 - ヘッダー: `Authorization: Bearer <Firebase の ID トークン>`（匿名ログインの `auth.currentUser.getIdToken()`）
 - ボディ: `{"sessionId": "...", "messageId": "..."}` だけ。本文や言語は API が Firestore から読み直す（端末の言うことをそのまま信じない）。

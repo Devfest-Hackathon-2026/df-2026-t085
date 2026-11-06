@@ -46,7 +46,7 @@ gcloud run deploy unsaid-api --source . --region asia-northeast1 --service-accou
 ## 4. 動いているか確認
 
 ```powershell
-Invoke-RestMethod https://unsaid-api-xxxx.asia-northeast1.run.app/healthz
+Invoke-RestMethod https://unsaid-api-xxxx.asia-northeast1.run.app/health
 # ok が True なら OK
 
 gcloud run services logs read unsaid-api --region asia-northeast1 --limit 50
@@ -88,3 +88,16 @@ gcloud auth application-default login   # 初回だけ。自分の権限で Gemi
 uvicorn main:app --reload --port 8080
 # http://localhost:8080/docs で API を試せる（ID トークンが要る）
 ```
+
+## 画面なしで端から端まで確かめる（スモークテスト）
+
+Firebase の設定（手順 5）が終わったら、本物の Firebase / Firestore / Gemini を通して一連の流れを確かめられる。
+`firestore.rules` が意図どおりに弾くかも一緒に確かめる。`--key` は Firebase コンソールの「プロジェクトの設定 → マイアプリ」にある `apiKey`。
+
+```powershell
+python smoke.py --api https://unsaid-api-xxxx.asia-northeast1.run.app --key <apiKey>
+python smoke.py --api https://unsaid-api-xxxx.asia-northeast1.run.app --key <apiKey> --lang vi --text "Dạo này tôi hay bị đau đầu."
+```
+
+最後に「すべて OK」と出れば成功。FAIL のときは、その行の HTTP コードと中身が原因（403 で Firestore と出たらルール、502 なら `gcloud run services logs read ...` のログを見る）。
+テストで作った session（`smoke-` で始まる）は Firestore に残るので、気になれば Firebase コンソールから消す。
