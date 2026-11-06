@@ -1,0 +1,107 @@
+<!doctype html>
+<!-- 音声入力の動作確認ページ（Yusei の画面ができる前に、マイク → 文字 → 発言 → /analyze を通すため）。
+     開き方は docs/stt.md。マイクは localhost か https でしか使えない。 -->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UNSAID 音声入力テスト</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 24px auto; padding: 0 16px; line-height: 1.6; }
+  label { display: block; margin-top: 12px; font-size: 14px; }
+  input, select, textarea { width: 100%; box-sizing: border-box; padding: 8px; font-size: 16px; }
+  button { font-size: 16px; padding: 10px 16px; margin-top: 12px; }
+  #talk { width: 100%; padding: 24px; font-size: 20px; touch-action: none; user-select: none; }
+  #talk.on { background: #d33; color: #fff; }
+  pre { background: #f4f4f4; padding: 12px; white-space: pre-wrap; font-size: 13px; }
+  .muted { color: #666; font-size: 14px; }
+</style>
+</head>
+<body>
+<h1>音声入力テスト</h1>
+
+<label>API の URL <input id="api" value="https://unsaid-api-799163399675.asia-northeast1.run.app"></label>
+<label>Firebase の apiKey（smoke.py の --key と同じ） <input id="key"></label>
+<label>患者の言語
+  <select id="lang"><option>en</option><option>zh-CN</option><option>vi</option></select>
+</label>
+<button id="start">1. ログインして session を作る</button>
+<p id="sess" class="muted"></p>
+
+<label>話す人
+  <select id="speaker"><option value="patient">患者（上の言語）</option><option value="doctor">医師（日本語）</option></select>
+</label>
+<button id="talk" disabled>2. 押している間だけ録音</button>
+<p id="heard" class="muted"></p>
+<label>聞き取った文字（直してから送れる） <textarea id="text" rows="3"></textarea></label>
+<button id="send" disabled>3. 発言として送る（→ /analyze か /translate）</button>
+<pre id="out"></pre>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, setDoc, addDoc, collection, onSnapshot, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { Recorder, transcribe } from "./stt.js";
+
+const $ = (id) => document.getElementById(id);
+try { $("key").value = localStorage.getItem("unsaid.key") || ""; } catch {}
+let auth, db, sessionId;
+const rec = new Recorder();
+
+$("start").onclick = async () => {
+  try { localStorage.setItem("unsaid.key", $("key").value); } catch {}
+  const app = initializeApp({ apiKey: $("key").value.trim(), authDomain: "unsaid-devfest.firebaseapp.com", projectId: "unsaid-devfest" });
+  auth = getAuth(app);
+  db = getFirestore(app);
+  const { user } = await signInAnonymously(auth);
+  sessionId = "stt-" + Date.now();
+  await setDoc(doc(db, "sessions", sessionId), {
+    patientLang: $("lang").value, doctorLang: "ja", members: [user.uid], createdAt: serverTimestamp(),
+  });
+  $("sess").textContent = `session: ${sessionId}（患者 ${$("lang").value} / 医師 ja）`;
+  $("talk").disabled = $("send").disabled = false;
+  $("start").disabled = true;
+};
+
+const talk = $("talk");
+talk.onpointerdown = async (e) => {
+  talk.setPointerCapture(e.pointerId);
+  talk.classList.add("on");
+  talk.textContent = "録音中…（離すと送る）";
+  try { await rec.start(); } catch (err) { $("heard").textContent = "マイクを使えません: " + err.message; }
+};
+talk.onpointerup = talk.onpointercancel = async () => {
+  if (!talk.classList.contains("on")) return;
+  talk.classList.remove("on");
+  talk.textContent = "2. 押している間だけ録音";
+  const t0 = performance.now();
+  const wav = await rec.stop();
+  if (!wav) return;
+  $("heard").textContent = `聞き取り中…（${Math.round(wav.size / 1024)} KB）`;
+  try {
+    const { text, lang } = await transcribe($("api").value, await auth.currentUser.getIdToken(), sessionId, $("speaker").value, wav);
+    const sec = ((performance.now() - t0) / 1000).toFixed(1);
+    $("heard").textContent = text ? `${lang} / 離してから ${sec} 秒` : "聞き取れませんでした。もう一度話してください";
+    $("text").value = text;
+  } catch (err) {
+    $("heard").textContent = "失敗: " + err.message;
+  }
+};
+
+$("send").onclick = async () => {
+  const from = $("speaker").value;
+  const ref = await addDoc(collection(db, "sessions", sessionId, "messages"), {
+    from, original: $("text").value.trim(), status: "analyzing", createdAt: serverTimestamp(),
+  });
+  onSnapshot(ref, (s) => { $("out").textContent = JSON.stringify(s.data(), null, 2); });
+  const res = await fetch($("api").value + (from === "patient" ? "/analyze" : "/translate"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${await auth.currentUser.getIdToken()}` },
+    body: JSON.stringify({ sessionId, messageId: ref.id }),
+  });
+  if (!res.ok) $("out").textContent += `\n\nHTTP ${res.status} ${await res.text()}`;
+};
+</script>
+</body>
+</html>

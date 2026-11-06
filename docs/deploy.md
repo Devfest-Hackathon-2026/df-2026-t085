@@ -17,7 +17,7 @@ python test_server.py                 # 「すべて PASS」と出れば OK
 ```powershell
 gcloud auth login
 gcloud config set project unsaid-devfest
-gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com aiplatform.googleapis.com firestore.googleapis.com
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com aiplatform.googleapis.com firestore.googleapis.com speech.googleapis.com
 ```
 
 ## 2. 初回だけ: API 専用のサービスアカウントを作る
@@ -30,6 +30,8 @@ gcloud iam service-accounts create unsaid-api --display-name "UNSAID API"
 gcloud projects add-iam-policy-binding unsaid-devfest --member "serviceAccount:unsaid-api@unsaid-devfest.iam.gserviceaccount.com" --role roles/aiplatform.user
 
 gcloud projects add-iam-policy-binding unsaid-devfest --member "serviceAccount:unsaid-api@unsaid-devfest.iam.gserviceaccount.com" --role roles/datastore.user
+
+gcloud projects add-iam-policy-binding unsaid-devfest --member "serviceAccount:unsaid-api@unsaid-devfest.iam.gserviceaccount.com" --role roles/speech.client
 ```
 
 ## 3. デプロイ（コードを変えるたびにこれだけ）
@@ -78,6 +80,7 @@ gcloud run services update unsaid-api --region asia-northeast1 --min-instances 0
 | デプロイ中に `PERMISSION_DENIED` / build が失敗 | 新しいプロジェクトでは Cloud Build 用の権限が足りないことがある。次を実行して再デプロイ: `$n = gcloud projects describe unsaid-devfest --format "value(projectNumber)"` のあと `gcloud projects add-iam-policy-binding unsaid-devfest --member "serviceAccount:$n-compute@developer.gserviceaccount.com" --role roles/cloudbuild.builds.builder` |
 | API が 502、ログに `403 PERMISSION_DENIED` (aiplatform) | 手順 2 の `roles/aiplatform.user` が付いていない |
 | API が 502、ログに Firestore の `403` | 手順 2 の `roles/datastore.user` が付いていない |
+| `/transcribe` が 502、ログに `403` (speech) | `speech.googleapis.com` の有効化か `roles/speech.client` が抜けている（docs/stt.md） |
 | API が 401 | 画面から `Authorization: Bearer <ID トークン>` が送られていない。匿名ログインが有効か確認 |
 | ブラウザのコンソールに CORS エラー | `ALLOWED_ORIGINS` に画面の URL が入っていない（未設定なら全許可） |
 

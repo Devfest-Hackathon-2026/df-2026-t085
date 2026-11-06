@@ -6,6 +6,7 @@
 
   POST /analyze    患者の発言: analyzing → clarifying（確認質問あり）/ confirmed（質問なし、翻訳まで済む）
   POST /translate  患者が回答した後: clarifying → confirmed ／ 医師の発言: analyzing → sent
+  POST /transcribe 音声 → 文字（Firestore には書かない。端末が確認してから発言を作る）
 
 詳しい契約は docs/api.md。
 """
@@ -15,16 +16,19 @@ import threading
 from contextlib import asynccontextmanager
 
 import firebase_admin
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from firebase_admin import auth, firestore
 from pydantic import BaseModel
 
+import stt
 import unsaid_ai
 
 log = logging.getLogger("unsaid")
 logging.basicConfig(level=logging.INFO)
 
+MAX_AUDIO_BYTES = 2_000_000  # 16kHz モノラル WAV で約 60 秒分。Speech-to-Text の同期認識の上限に合わせる
 MAX_CHARS = 1000  # 1発言の上限。長すぎる入力でトークンを使い切らないように
 # 開発中は "*"。本番は Firebase App Hosting の URL をカンマ区切りで渡す（Cloud Run の環境変数）
 ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
@@ -72,15 +76,21 @@ class MessageRef(BaseModel):
     messageId: str
 
 
-def _load(ref: MessageRef, uid: str):
-    """セッションのメンバーか確認し、(セッション, メッセージの参照, メッセージ) を返す。"""
-    s_ref = db().collection("sessions").document(ref.sessionId)
+def _session(session_id: str, uid: str):
+    """セッションのメンバーか確認し、(セッションの参照, セッション) を返す。"""
+    s_ref = db().collection("sessions").document(session_id)
     s = s_ref.get()
     if not s.exists:
         raise HTTPException(404, "session がありません")
     session = s.to_dict()
     if uid not in session.get("members", []):
         raise HTTPException(403, "この session のメンバーではありません")
+    return s_ref, session
+
+
+def _load(ref: MessageRef, uid: str):
+    """セッションのメンバーか確認し、(セッション, メッセージの参照, メッセージ) を返す。"""
+    s_ref, session = _session(ref.sessionId, uid)
     m_ref = s_ref.collection("messages").document(ref.messageId)
     m = m_ref.get()
     if not m.exists:
@@ -201,3 +211,30 @@ def translate(ref: MessageRef, uid: str = Depends(current_uid)):
     return {**update, "error": None}
 
 
+
+
+@app.post("/transcribe")
+async def transcribe(
+    request: Request,
+    sessionId: str = Query(...),
+    speaker: str = Query(..., pattern="^(patient|doctor)$"),
+    uid: str = Depends(current_uid),
+):
+    """録音した1発言を文字にして返す。ボディは音声そのもの（web/stt.js は 16kHz モノラル WAV を送る）。
+    言語は session の patientLang / doctorLang から決める。音声も結果も保存しない。"""
+    _, session = await run_in_threadpool(_session, sessionId, uid)  # メンバー以外にクレジットを使わせない
+    audio = await request.body()
+    if not audio:
+        raise HTTPException(400, "音声が空です")
+    if len(audio) > MAX_AUDIO_BYTES:
+        raise HTTPException(413, f"音声は {stt.MAX_SECONDS} 秒以内にしてください")
+    lang = session["patientLang"] if speaker == "patient" else session["doctorLang"]
+    if lang not in stt.STT_LANGS:
+        raise HTTPException(400, f"{lang} は音声入力に未対応です（stt.STT_LANGS に追加）")
+    try:
+        text, sec = await run_in_threadpool(stt.transcribe, audio, lang)
+    except Exception:
+        log.exception("speech-to-text failed")
+        raise HTTPException(502, "音声の聞き取りに失敗しました。もう一度話すか、文字で入力してください")
+    log.info("transcribe %s %.1fs %dB chars=%d", lang, sec, len(audio), len(text))
+    return {"text": text, "lang": lang}

@@ -3,7 +3,7 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY unsaid_ai.py main.py ./
+COPY unsaid_ai.py stt.py main.py ./
 COPY prompts/ prompts/
 COPY schemas/ schemas/
 # Cloud Run が PORT を渡す（既定 8080）
