@@ -115,7 +115,7 @@ def _patient_translate(session, msg, clarification=None):
     return _translation(out, session["doctorLang"])
 
 
-@app.get("/healthz")
+@app.get("/health")  # Cloud Run は末尾が z のパス（/healthz など）を予約していて届かない
 def healthz():
     return {"ok": True}
 

@@ -46,7 +46,7 @@ gcloud run deploy unsaid-api --source . --region asia-northeast1 --service-accou
 ## 4. 動いているか確認
 
 ```powershell
-Invoke-RestMethod https://unsaid-api-xxxx.asia-northeast1.run.app/healthz
+Invoke-RestMethod https://unsaid-api-xxxx.asia-northeast1.run.app/health
 # ok が True なら OK
 
 gcloud run services logs read unsaid-api --region asia-northeast1 --limit 50
