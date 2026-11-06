@@ -10,7 +10,7 @@ KANA = re.compile(r"[\u3040-\u30ff]")
 HAN = re.compile(r"[\u4e00-\u9fff]")
 
 # clarify: 確認質問が出るべきか / target: 確認対象に含まれるべき語（どれか1つ）
-# keep: facts のどこかに残っているべき文字列 / negated・uncertain: どれかの fact で True になるべきか
+# keep: facts のどこかに残っているべき文字列（リストなら「どれか1つ」。例: ["3", "three"]） / negated・uncertain: どれかの fact で True になるべきか
 ANALYZE_CASES = [
     # --- English（デモ想定） ---
     dict(lang="en", text="I've had a headache for a while.", clarify=True, target=["for a while"]),
@@ -43,7 +43,7 @@ TRANSLATE_CASES = [
          original="I've had a headache for a while.",
          clarification=dict(target="for a while", question="How long have you had the headache?",
                             answer_type="option", answer="About 1 to 3 days"),
-         keep=["3"]),
+         keep=[["3", "three"]]),
     dict(name="患者→医師: 説明できない", direction="patient_to_doctor", src="en", dst="ja",
          original="My stomach hurts sometimes after I eat.",
          clarification=dict(target="sometimes", question="How often does it happen?",
@@ -53,10 +53,10 @@ TRANSLATE_CASES = [
          original="我没有发烧。", clarification=None, keep=["熱"]),
     dict(name="医師→患者: 英語", direction="doctor_to_patient", src="ja", dst="en",
          original="この薬は1日3回、食後に飲んでください。眠くなることがあるので、車の運転はしないでください。",
-         keep=["3"]),
+         keep=[["3", "three"]]),
     dict(name="医師→患者: ベトナム語", direction="doctor_to_patient", src="ja", dst="vi",
          original="この薬は1日3回、食後に飲んでください。眠くなることがあるので、車の運転はしないでください。",
-         keep=["3"]),
+         keep=[["3", "ba"]]),
 ]
 
 
@@ -69,6 +69,13 @@ def script_ok(lang, s):
     if lang == "zh-CN":
         return bool(HAN.search(s))
     return not HAN.search(s)
+
+
+def missing(keep, text):
+    """keep のうち text に見つからないものを返す（大文字小文字は無視）。"""
+    text = text.lower()
+    alts = [[k] if isinstance(k, str) else k for k in keep]
+    return [a for a in alts if not any(x.lower() in text for x in a)]
 
 
 def check_analyze(c, out):
@@ -89,17 +96,15 @@ def check_analyze(c, out):
         if c.get(key) and not any(f[key] for f in facts):
             errs.append(f"{key} が保持されていない")
     blob = " ".join(f["text"] + " " + f["doctor_gloss"] for f in facts)
-    for k in c.get("keep", []):
-        if k not in blob:
-            errs.append(f"{k!r} が facts から消えた")
+    for k in missing(c.get("keep", []), blob):
+        errs.append(f"{k} が facts から消えた")
     return errs
 
 
 def check_translate(c, out):
     errs = []
-    for k in c.get("keep", []):
-        if k not in out["translation"]:
-            errs.append(f"{k!r} が訳から消えた")
+    for k in missing(c.get("keep", []), out["translation"]):
+        errs.append(f"{k} が訳から消えた")
     if c.get("need_note") and not out["note"]:
         errs.append("note が空（説明できなかったことが医師に伝わらない）")
     if not script_ok(c["dst"], out["translation"]):
@@ -109,15 +114,26 @@ def check_translate(c, out):
 
 def run(cases, fn, check, label):
     fails = 0
+    times = []
     for c in cases:
-        out, sec = fn(c)
+        try:
+            out, sec = fn(c)
+        except Exception as e:  # 1件が 429 で失敗しても残りは続ける
+            fails += 1
+            print(f"ERROR [{label(c)}] {type(e).__name__}: {str(e)[:150]}")
+            continue
         errs = check(c, out)
         fails += bool(errs)
-        print(f"{'PASS' if not errs else 'FAIL'} {sec:.1f}秒 [{label(c)}]")
+        times.append(sec)
+        meta = out.pop("_meta", {})
+        print(f"{'PASS' if not errs else 'FAIL'} {sec:.1f}秒 [{label(c)}] {meta}")
         for e in errs:
             print("   -", e)
         for line in view(out):
             print("   ", line)
+    times.sort()
+    if times:
+        print(f"-- 中央値 {times[len(times) // 2]:.1f}秒 / 最大 {times[-1]:.1f}秒\n")
     return fails
 
 
@@ -128,6 +144,8 @@ def view(out):
             yield f"fact[{f['kind']}{flags}] {f['text']} / {f['doctor_gloss']}"
         for q in out["clarifications"]:
             yield f"Q({q['ui_type']}) [{q['target']}] {q['question']} -> {q['options']}"
+            if "target_raw" in q:
+                yield f"   ※ target をコードで補正: {q['target_raw']!r} -> {q['target']!r}"
     else:
         yield f"訳: {out['translation']}"
         yield f"逆訳: {out['back_translation']}"

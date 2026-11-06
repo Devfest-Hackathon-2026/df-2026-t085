@@ -1,5 +1,7 @@
 """UNSAID の Gemini 呼び出し（analyze / translate）。Cloud Run からもそのまま import して使う想定。"""
+import difflib
 import json
+import random
 import time
 from pathlib import Path
 
@@ -9,6 +11,16 @@ from google.genai import types
 PROJECT = "unsaid-devfest"
 LOCATION = "global"
 MODEL = "gemini-3.8-flash"
+# translate だけ軽いモデルに替えて速度を比べられるようにしておく（例: Flash-Lite 系）
+TRANSLATE_MODEL = MODEL
+# 1回の待ち時間の上限と、超えたときの再試行回数。
+# 実測では普段 2〜7 秒、まれに 40〜70 秒かかる外れ値があったため、待たずに打ち直す
+TIMEOUT_SEC = 12
+RETRIES = 1
+# 429（RESOURCE_EXHAUSTED）は Gemini の共有キャパシティの一時的な混雑。すぐ打ち直すと同じく弾かれるので、
+# 少しずつ間隔を空けて（1→2→4秒＋揺らぎ）最大 RETRIES_429 回まで再試行する。5xx も同じ扱い
+RETRIES_429 = 4
+BACKOFF_BASE_SEC = 1.0
 BASE = Path(__file__).parent
 
 # 言語を増やすときはここに1行足すだけ（プロンプトは変更不要）
@@ -43,23 +55,65 @@ def _lang(code):
     return f"{code} ({LANGS.get(code, code)})"
 
 
-def _call(system_file, schema_file, payload):
+def _client_():
     global _client
     if _client is None:
-        _client = genai.Client(vertexai=True, project=PROJECT, location=LOCATION)
+        _client = genai.Client(
+            vertexai=True,
+            project=PROJECT,
+            location=LOCATION,
+            http_options=types.HttpOptions(timeout=TIMEOUT_SEC * 1000),  # ミリ秒
+        )
+    return _client
+
+
+def _status(e):
+    return getattr(e, "code", None) or getattr(e, "status_code", None)
+
+
+def _call(system_file, schema_file, payload, model=MODEL):
     start = time.time()
-    res = _client.models.generate_content(
-        model=MODEL,
-        # 入力は JSON で渡す。システムプロンプトが言語に依存せず常に同じなので、暗黙キャッシュも効きやすい
-        contents=json.dumps(payload, ensure_ascii=False),
-        config=types.GenerateContentConfig(
-            system_instruction=_load(system_file),
-            response_mime_type="application/json",
-            response_json_schema=_load(schema_file),
-            thinking_config=types.ThinkingConfig(thinking_level="low"),
-        ),
-    )
-    return json.loads(res.text), time.time() - start
+    timeouts = busy = 0
+    while True:
+        attempt = timeouts + busy + 1
+        try:
+            res = _client_().models.generate_content(
+                model=model,
+                # 入力は JSON で渡す。システムプロンプトが言語に依存せず常に同じなので、暗黙キャッシュも効きやすい
+                contents=json.dumps(payload, ensure_ascii=False),
+                config=types.GenerateContentConfig(
+                    system_instruction=_load(system_file),
+                    response_mime_type="application/json",
+                    response_json_schema=_load(schema_file),
+                    thinking_config=types.ThinkingConfig(thinking_level="low"),
+                ),
+            )
+            out = json.loads(res.text)
+            u = res.usage_metadata
+            # 遅い回の原因切り分け用：思考トークンが多いのか、待たされているだけなのか
+            out["_meta"] = {
+                "attempt": attempt,
+                "thoughts": getattr(u, "thoughts_token_count", None),
+                "out_tokens": getattr(u, "candidates_token_count", None),
+            }
+            return out, time.time() - start
+        except Exception as e:
+            code = _status(e)
+            if code == 429 or (isinstance(code, int) and code >= 500):
+                busy += 1
+                if busy > RETRIES_429:
+                    raise
+                wait = BACKOFF_BASE_SEC * 2 ** (busy - 1) + random.uniform(0, 0.5)
+            elif isinstance(code, int):
+                raise  # 400 や 403 は打ち直しても直らない（スキーマや権限の問題）
+            else:
+                timeouts += 1  # タイムアウト・通信エラー・JSON 崩れ
+                if timeouts > RETRIES:
+                    raise
+                wait = 0
+            print(f"  [retry] attempt {attempt} failed after {time.time() - start:.1f}s "
+                  f"({code or type(e).__name__}), {wait:.1f}s 待って再試行")
+            time.sleep(wait)
 
 
 def analyze(utterance, patient_lang, doctor_lang="ja"):
@@ -73,8 +127,27 @@ def analyze(utterance, patient_lang, doctor_lang="ja"):
     out["clarifications"] = out.get("clarifications", [])[:1]
     out["needs_clarification"] = bool(out["clarifications"])
     for c in out["clarifications"]:
+        snapped = _snap_target(c["target"], utterance)
+        if snapped != c["target"]:
+            c["target_raw"] = c["target"]  # モデルが言い換えた元の値（テストで警告表示）
+            c["target"] = snapped
         c["fixed_options"] = FIXED_OPTIONS.get(patient_lang, FIXED_OPTIONS["en"])
     return out, sec
+
+
+def _snap_target(target, utterance):
+    """target が原文にそのまま無いとき（言い換えられたとき）、原文の中で一番長く一致する部分に寄せる。
+
+    UI は target で原文をハイライトするので、原文に存在する文字列であることを保証したい。
+    """
+    if target in utterance:
+        return target
+    i = utterance.lower().find(target.lower())
+    if i >= 0:
+        return utterance[i:i + len(target)]
+    m = difflib.SequenceMatcher(None, utterance.lower(), target.lower()).find_longest_match()
+    snapped = utterance[m.a:m.a + m.size].strip(" ,.。、")
+    return snapped if len(snapped) >= 2 else target
 
 
 def translate(original, source_lang, target_lang, direction, clarification=None):
@@ -85,7 +158,8 @@ def translate(original, source_lang, target_lang, direction, clarification=None)
     return _call(
         "prompts/translate_system.txt",
         "schemas/translate.json",
-        {
+        model=TRANSLATE_MODEL,
+        payload={
             "direction": direction,
             "source_lang": _lang(source_lang),
             "target_lang": _lang(target_lang),
@@ -93,3 +167,11 @@ def translate(original, source_lang, target_lang, direction, clarification=None)
             "clarification": clarification,
         },
     )
+
+
+def warm_up():
+    """サーバー起動時に1回呼んで、最初の呼び出しが遅い問題をデモ前に済ませておく。"""
+    try:
+        analyze("I have a headache.", "en")
+    except Exception:
+        pass
