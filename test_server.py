@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from firebase_admin import firestore
 
 import main
+import stt
 import unsaid_ai
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -128,6 +129,26 @@ check("error からやり直せる", post("/analyze", "m4").status_code == 200 a
 main.app.dependency_overrides[main.current_uid] = lambda: "stranger"
 check("メンバー以外は 403", post("/analyze", "m2").status_code == 403)
 check("無い session は 404", post("/analyze", "m2", sid="nope").status_code == 404)
+
+# --- 音声入力（/transcribe）---
+main.app.dependency_overrides[main.current_uid] = lambda: "patient"
+heard = []
+stt.transcribe = lambda audio, lang: (heard.append(lang) or "I've had a headache for a while.", 0.1)
+tx = lambda speaker, body=b"RIFF....", sid="s1": client.post(
+    f"/transcribe?sessionId={sid}&speaker={speaker}", content=body, headers={"Content-Type": "audio/wav"})
+r = tx("patient")
+check("患者の音声 → 文字が返る", r.status_code == 200 and r.json()["text"].startswith("I've had"))
+check("患者の音声は patientLang で聞く", heard[-1] == "en")
+tx("doctor")
+check("医師の音声は doctorLang で聞く", heard[-1] == "ja")
+check("文字にしただけでは Firestore に書かない", len(store) == 5)
+check("空の音声は 400", tx("patient", b"").status_code == 400)
+check("大きすぎる音声は 413", tx("patient", b"x" * (main.MAX_AUDIO_BYTES + 1)).status_code == 413)
+check("speaker が不正なら 422", tx("nurse").status_code == 422)
+stt.transcribe = lambda *a: (_ for _ in ()).throw(RuntimeError("boom"))
+check("Speech-to-Text 失敗 → 502", tx("patient").status_code == 502)
+main.app.dependency_overrides[main.current_uid] = lambda: "stranger"
+check("メンバー以外は音声も 403", tx("patient").status_code == 403)
 
 print(f"\n{fails} 件 FAIL" if fails else "\nすべて PASS")
 sys.exit(1 if fails else 0)

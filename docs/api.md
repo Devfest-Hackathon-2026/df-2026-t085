@@ -5,6 +5,8 @@ API のレスポンスを使わなくても、結果は同じメッセージに�
 
 ## 全体の流れ
 
+音声入力のときは、この前に `POST /transcribe` で文字にして、患者が確認してから下の `addDoc` をする（docs/stt.md）。
+
 ```
 患者の発言:
   端末   addDoc {from:"patient", original, status:"analyzing"}  → POST /analyze
@@ -29,6 +31,7 @@ API のレスポンスを使わなくても、結果は同じメッセージに�
 |---|---|---|---|
 | POST | `/analyze` | 患者の発言を作った直後 | 200。status は `clarifying` か `confirmed` |
 | POST | `/translate` | 患者: `clarification.answer` を書いた後 ／ 医師: 発言を作った直後 | 200。患者は `confirmed`、医師は `sent` |
+| POST | `/transcribe?sessionId=&speaker=patient\|doctor` | 音声入力のとき、発言を作る前（ボディは WAV） | 200。`{text, lang}`。Firestore には書かない。詳しくは docs/stt.md |
 | GET | `/health` | 動作確認 | `{"ok": true}` |
 
 - ヘッダー: `Authorization: Bearer <Firebase の ID トークン>`（匿名ログインの `auth.currentUser.getIdToken()`）
