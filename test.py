@@ -116,7 +116,12 @@ def run(cases, fn, check, label):
     fails = 0
     times = []
     for c in cases:
-        out, sec = fn(c)
+        try:
+            out, sec = fn(c)
+        except Exception as e:  # 1件が 429 で失敗しても残りは続ける
+            fails += 1
+            print(f"ERROR [{label(c)}] {type(e).__name__}: {str(e)[:150]}")
+            continue
         errs = check(c, out)
         fails += bool(errs)
         times.append(sec)
@@ -127,7 +132,8 @@ def run(cases, fn, check, label):
         for line in view(out):
             print("   ", line)
     times.sort()
-    print(f"-- 中央値 {times[len(times) // 2]:.1f}秒 / 最大 {times[-1]:.1f}秒\n")
+    if times:
+        print(f"-- 中央値 {times[len(times) // 2]:.1f}秒 / 最大 {times[-1]:.1f}秒\n")
     return fails
 
 

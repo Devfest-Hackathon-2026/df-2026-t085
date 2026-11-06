@@ -1,6 +1,7 @@
 """UNSAID の Gemini 呼び出し（analyze / translate）。Cloud Run からもそのまま import して使う想定。"""
 import difflib
 import json
+import random
 import time
 from pathlib import Path
 
@@ -16,6 +17,10 @@ TRANSLATE_MODEL = MODEL
 # 実測では普段 2〜7 秒、まれに 40〜70 秒かかる外れ値があったため、待たずに打ち直す
 TIMEOUT_SEC = 12
 RETRIES = 1
+# 429（RESOURCE_EXHAUSTED）は Gemini の共有キャパシティの一時的な混雑。すぐ打ち直すと同じく弾かれるので、
+# 少しずつ間隔を空けて（1→2→4秒＋揺らぎ）最大 RETRIES_429 回まで再試行する。5xx も同じ扱い
+RETRIES_429 = 4
+BACKOFF_BASE_SEC = 1.0
 BASE = Path(__file__).parent
 
 # 言語を増やすときはここに1行足すだけ（プロンプトは変更不要）
@@ -62,10 +67,15 @@ def _client_():
     return _client
 
 
+def _status(e):
+    return getattr(e, "code", None) or getattr(e, "status_code", None)
+
+
 def _call(system_file, schema_file, payload, model=MODEL):
     start = time.time()
-    last_err = None
-    for attempt in range(RETRIES + 1):
+    timeouts = busy = 0
+    while True:
+        attempt = timeouts + busy + 1
         try:
             res = _client_().models.generate_content(
                 model=model,
@@ -82,17 +92,28 @@ def _call(system_file, schema_file, payload, model=MODEL):
             u = res.usage_metadata
             # 遅い回の原因切り分け用：思考トークンが多いのか、待たされているだけなのか
             out["_meta"] = {
-                "attempt": attempt + 1,
+                "attempt": attempt,
                 "thoughts": getattr(u, "thoughts_token_count", None),
                 "out_tokens": getattr(u, "candidates_token_count", None),
             }
             return out, time.time() - start
-        except Exception as e:  # タイムアウト・429・JSON 崩れ（まれ）をまとめて再試行
-            last_err = e
-            # 何で失敗したかを残す（タイムアウトか 429 か）。デモ前に原因を見るため
-            print(f"  [retry] attempt {attempt + 1} failed after {time.time() - start:.1f}s: "
-                  f"{type(e).__name__}: {str(e)[:120]}")
-    raise last_err
+        except Exception as e:
+            code = _status(e)
+            if code == 429 or (isinstance(code, int) and code >= 500):
+                busy += 1
+                if busy > RETRIES_429:
+                    raise
+                wait = BACKOFF_BASE_SEC * 2 ** (busy - 1) + random.uniform(0, 0.5)
+            elif isinstance(code, int):
+                raise  # 400 や 403 は打ち直しても直らない（スキーマや権限の問題）
+            else:
+                timeouts += 1  # タイムアウト・通信エラー・JSON 崩れ
+                if timeouts > RETRIES:
+                    raise
+                wait = 0
+            print(f"  [retry] attempt {attempt} failed after {time.time() - start:.1f}s "
+                  f"({code or type(e).__name__}), {wait:.1f}s 待って再試行")
+            time.sleep(wait)
 
 
 def analyze(utterance, patient_lang, doctor_lang="ja"):
