@@ -1,7 +1,7 @@
 # Cloud Run へのデプロイ手順（Windows / PowerShell）
 
 PowerShell で、リポジトリのフォルダ（`C:\DEV\Project-Xingularity`）に移動してから実行する。
-行末の `` ` ``（バッククォート）は「次の行に続く」という意味。コピーするときは消さない。
+コマンドは1つずつ、1行のまま貼り付けて実行する（途中で改行すると1行目だけが実行されてエラーになる）。
 
 ## 0. 先にローカルでテスト（ネット・クレジットを使わない）
 
@@ -27,25 +27,15 @@ Cloud Run が Gemini（Vertex AI）と Firestore を使うための「ロボッ�
 ```powershell
 gcloud iam service-accounts create unsaid-api --display-name "UNSAID API"
 
-gcloud projects add-iam-policy-binding unsaid-devfest `
-  --member "serviceAccount:unsaid-api@unsaid-devfest.iam.gserviceaccount.com" `
-  --role roles/aiplatform.user
+gcloud projects add-iam-policy-binding unsaid-devfest --member "serviceAccount:unsaid-api@unsaid-devfest.iam.gserviceaccount.com" --role roles/aiplatform.user
 
-gcloud projects add-iam-policy-binding unsaid-devfest `
-  --member "serviceAccount:unsaid-api@unsaid-devfest.iam.gserviceaccount.com" `
-  --role roles/datastore.user
+gcloud projects add-iam-policy-binding unsaid-devfest --member "serviceAccount:unsaid-api@unsaid-devfest.iam.gserviceaccount.com" --role roles/datastore.user
 ```
 
 ## 3. デプロイ（コードを変えるたびにこれだけ）
 
 ```powershell
-gcloud run deploy unsaid-api `
-  --source . `
-  --region asia-northeast1 `
-  --service-account unsaid-api@unsaid-devfest.iam.gserviceaccount.com `
-  --allow-unauthenticated `
-  --memory 512Mi `
-  --timeout 120
+gcloud run deploy unsaid-api --source . --region asia-northeast1 --service-account unsaid-api@unsaid-devfest.iam.gserviceaccount.com --allow-unauthenticated --memory 512Mi --timeout 120
 ```
 
 - 初回は「Artifact Registry のリポジトリを作りますか？」と聞かれるので `Y`。
