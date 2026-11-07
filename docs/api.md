@@ -10,7 +10,7 @@ API のレスポンスを使わなくても、結果は同じメッセージに�
 ```
 患者の発言:
   端末   addDoc {from:"patient", original, status:"analyzing"}  → POST /analyze
-  API    facts と確認質問を書く
+  API    確認質問を書く（facts は少し後から同じメッセージに書き足す）
            確認質問あり → status "clarifying"（clarification.answer = null）
            確認質問なし → 翻訳まで済ませて status "confirmed"
   端末   （clarifying のとき）clarification.answer を書く        → POST /translate
@@ -37,7 +37,8 @@ API のレスポンスを使わなくても、結果は同じメッセージに�
 - ヘッダー: `Authorization: Bearer <Firebase の ID トークン>`（匿名ログインの `auth.currentUser.getIdToken()`）
 - ボディ: `{"sessionId": "...", "messageId": "..."}` だけ。本文や言語は API が Firestore から読み直す（端末の言うことをそのまま信じない）。
 - レスポンス: Firestore に書いた内容と同じ（デバッグ用。画面は onSnapshot を使えばよい）。
-- 1回 3〜7 秒かかる。確認質問なしの患者の発言は analyze＋translate の2回分（〜10秒）。
+- 待ち時間: `/analyze` は確認質問だけを先に Firestore に書く（facts と先回りの翻訳は並列）。質問ありでも質問なしでも、画面に出るまで Gemini 1回分。
+  HTTP のレスポンスは facts まで書き終えてから返るので、**質問の表示は onSnapshot で行う**（`await callApi()` の後に表示すると速くならない）。
 
 | エラー | 意味 | 画面での扱い |
 |---|---|---|
@@ -56,7 +57,7 @@ API のレスポンスを使わなくても、結果は同じメッセージに�
 | `original` | 端末（作成時） | 話した内容（1〜1000 文字） |
 | `status` | 下の表 | `analyzing` → `clarifying` → `confirmed` → `sent` → `received`、失敗時 `error` |
 | `createdAt` | 端末（作成時） | `serverTimestamp()` |
-| `facts` | API | `[{text, doctor_gloss, kind, negated, uncertain, time?}]`。医師画面の補助表示 |
+| `facts` | API | `[{text, doctor_gloss, kind, negated, uncertain, time?}]`。医師画面の補助表示。`status` が `clarifying` / `confirmed` になった直後はまだ無いことがある（1〜数秒後に届く。失敗したら `[]`） |
 | `clarification` | API（`answer` だけ患者の端末） | `null` か `{target, question, ui_type, options[], fixed_options{unsure, free_text}, answer}` |
 | `translation` | API | `null` か `{lang, text, back_translation, note}` |
 | `error` | API | 失敗したときだけ。例外名 |

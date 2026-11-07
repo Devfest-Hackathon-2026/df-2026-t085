@@ -7,7 +7,9 @@
 
 | 呼び出し | プロンプト | スキーマ | Firestore への書き込み |
 |---|---|---|---|
-| `analyze(utterance, patient_lang, doctor_lang)` | `prompts/analyze_system.txt` | `schemas/analyze.json` | `facts`, `clarification`（`clarifications[0]` か null）, `status` |
+| `clarify(utterance, patient_lang, doctor_lang)` | `prompts/clarify_system.txt` | `schemas/clarify.json` | `clarification`（`clarifications[0]` か null）, `status`（先に書く） |
+| `facts(utterance, patient_lang, doctor_lang)` | `prompts/facts_system.txt` | `schemas/facts.json` | `facts`（後から書き足す） |
+| `analyze_single(...)`（`ANALYZE_MODE=single` のときだけ） | `prompts/analyze_system.txt` | `schemas/analyze.json` | 上の2つを1回で |
 | `translate(original, src, dst, direction, clarification)` | `prompts/translate_system.txt` | `schemas/translate.json` | `translation {lang, text}` |
 
 ## 多言語化のための設計判断（Own the Why）
@@ -43,3 +45,30 @@ python test.py translate  # 翻訳だけ
 - `TRANSLATE_MODEL` を分けたので、翻訳だけ Flash-Lite 系に替えて速度と品質を比べられる。
 - `warm_up()` をサーバー起動時に呼び、最初の1回が遅い問題をデモ前に済ませる。
 - 429（RESOURCE_EXHAUSTED）は Gemini の共有キャパシティの一時的な混雑なので、1→2→4→8秒（＋揺らぎ）の間隔で最大4回再試行する。400/403 は打ち直しても直らないので即エラー。
+
+## 待ち時間を縮める（11/6）
+
+11/6 の実測: STT 1.3 秒 ＋ `/analyze` 3〜7 秒。質問なしの発言は analyze の後に translate を直列に呼ぶので 〜10 秒。
+Gemini の応答時間はほぼ出力トークン数に比例するのに、患者が待っていた analyze の出力の大半は、患者には見せない
+facts（医師向けの日本語 gloss つき）だった。
+
+**採用: `/analyze` で Gemini を3本並列に投げ、患者が待つのは出力の短い1本だけにする。**
+
+```
+/analyze ─┬─ clarify   質問だけ（短い）     → 返ったらすぐ Firestore に書く（画面に質問が出る）
+          ├─ facts     医師画面の補助       → 後から書き足す（医師が見るのは患者が送信した後）
+          └─ translate 質問なしに備えた先回り → 質問なしなら使う。質問ありなら捨てる
+```
+
+- 質問あり: 待ち時間 = clarify 1本分。質問なし: clarify と translate の遅い方（直列の和だったものが max になる）。
+- 切り替え: Cloud Run の環境変数 `ANALYZE_MODE=single` で従来の1回呼び出しに戻せる（品質が落ちたときの逃げ道）。
+- 比べ方: `python bench.py`（旧と新を交互に呼んで中央値を出す）、品質は `python test.py analyze`。
+
+| 案 | 長所 | 短所 | 判断 |
+|---|---|---|---|
+| **clarify / facts を分けて並列＋先回り翻訳** | 待つのは短い出力1本。API の呼び方は変わらない。env で戻せる | 1発言あたりの呼び出しが 1〜2 → 3 本（質問ありだと翻訳1本は捨てる。入出力とも数百トークンの短い呼び出し）。質問の判断が facts の分解を「下書き」にできなくなる | **採用**。費用はクレジットに対して誤差。判断の品質は test.py で旧と同じか確認する |
+| ストリーミングで質問だけ先に読む | 呼び出し1本のまま | JSON の途中を解析する必要があり、スキーマ順（質問を先に）を守らせる保証がない。facts の生成はやはり待つ | 不採用 |
+| thinking_level を下げる | 簡単 | `minimal` は gemini-3.8-flash で使えない（11/5 確認）。low 以下に下げる手がない | 対象外 |
+| 軽いモデル（Flash-Lite 系）に替える | 速い | 「どこが曖昧か」の判断が製品の核。品質を落としてまで縮める所ではない | 翻訳だけなら `TRANSLATE_MODEL` で試せる |
+| Cloud Run の `--min-instances 1` | コールドスタート（〜10 秒）が消える | 常時課金 | デモ当日だけ（docs/deploy.md） |
+| 待ち時間は UI で見せ方を工夫する | 実時間は変わらない | — | 併用（文字起こしを即表示、「確認しています…」） |
