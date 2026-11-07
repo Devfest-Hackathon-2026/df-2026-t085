@@ -132,7 +132,7 @@ function retry(sessionId, m) {
 }
 ```
 
-`session` は `{patientLang, doctorLang, members: [uid, ...], createdAt}`。`patientLang` は `unsaid_ai.py` の `LANGS` にある言語（`en` / `zh-CN` / `vi`）、`doctorLang` は `ja`。
+`session` は `{patientLang, doctorLang, members: [uid, ...], createdAt}`。`patientLang` は `unsaid_ai.py` の `LANGS` にある言語（`en` / `zh-CN` / `vi`）。医師が QR で作った直後は `null` で、患者が参加するときに1回だけ書く（それまで API は 409）。`doctorLang` は `ja`。
 Firestore のルール案は `firestore.rules`（端末が書けるのは上の表の「端末」の項目だけ）。
 
 ## 構成の選び方（Own the Why）

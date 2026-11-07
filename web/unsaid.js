@@ -3,8 +3,8 @@
 //
 //   import * as unsaid from "./unsaid.js";
 //   await unsaid.login();
-//   const sid = await unsaid.createSession("en");        // 患者の端末（言語を選んだ後）
-//   await unsaid.joinSession(sid);                       // 医師の端末（QR / URL の ?s= で sid を受け取る）
+//   const sid = await unsaid.createSession();            // 医師の端末。joinUrl(sid) を qrSvg() で QR にして見せる
+//   await unsaid.joinSession(sid, "en");                 // 患者のスマホ（QR を読み、言語を選んだ後）
 //   const stop = unsaid.watchMessages(sid, (msgs) => render(msgs));   // 表示はすべてここから
 //   await unsaid.say(sid, "patient", "I've had a headache for a while.");
 //
@@ -12,10 +12,11 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
-  getFirestore, collection, doc, addDoc, updateDoc, query, orderBy, onSnapshot, serverTimestamp, arrayUnion,
+  getFirestore, collection, doc, addDoc, getDoc, updateDoc, query, orderBy, onSnapshot, serverTimestamp, arrayUnion,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { transcribe as postWav } from "./stt.js";
 import { firebaseConfig, API_URL } from "./firebase-config.js";
+import qrcode from "./vendor/qrcode.js";
 
 export { Recorder } from "./stt.js";
 export { API_URL };
@@ -32,8 +33,12 @@ export async function login() {
 
 const msgRef = (sid, mid) => doc(db, "sessions", sid, "messages", mid);
 
-// 患者の端末: session を作る。patientLang は en / zh-CN / vi。作った後は変えられない（ルールで members 以外は更新不可）
-export async function createSession(patientLang) {
+// 患者が選べる言語（unsaid_ai.py の LANGS / firestore.rules と同じ）
+export const PATIENT_LANGS = ["en", "zh-CN", "vi"];
+
+// 医師の端末: session を作り、id を返す。patientLang は患者が QR から参加するときに決まる（それまで null）。
+// 以前の「患者が作る」流れも残している: createSession("en") なら言語つきで作る
+export async function createSession(patientLang = null) {
   const user = await login();
   const ref = await addDoc(collection(db, "sessions"), {
     patientLang, doctorLang: "ja", members: [user.uid], createdAt: serverTimestamp(),
@@ -41,10 +46,41 @@ export async function createSession(patientLang) {
   return ref.id;
 }
 
-// 医師の端末: session に参加する。メンバーになる前は session を読めないので、読まずに自分を足す
-export async function joinSession(sid) {
+// 自分がメンバーの session なら中身を、まだ参加していなければ null を返す（再読み込みで入り直さないため）
+export async function mySession(sid) {
   const user = await login();
-  await updateDoc(doc(db, "sessions", sid), { members: arrayUnion(user.uid) });
+  try {
+    const s = await getDoc(doc(db, "sessions", sid));
+    return s.exists() && s.data().members?.includes(user.uid) ? { id: s.id, ...s.data() } : null;
+  } catch (e) {
+    if (e.code === "permission-denied") return null; // メンバーでないと読めない
+    throw e;
+  }
+}
+
+// QR / URL の id で参加する。患者のスマホは patientLang を渡す（null の session に1回だけ書ける）。
+// 参加できるのは作ってから 30 分以内・2人目まで（firestore.rules）。参加済みなら何もしない
+export async function joinSession(sid, patientLang) {
+  const user = await login();
+  if (await mySession(sid)) return;
+  const change = { members: arrayUnion(user.uid) };
+  if (patientLang) change.patientLang = patientLang;
+  await updateDoc(doc(db, "sessions", sid), change);
+}
+
+// 患者がスマホで開く URL。page は患者の画面（既定は try.html）。この URL を qrSvg() で QR にする
+export function joinUrl(sid, page = "try.html") {
+  const u = new URL(page, location.href);
+  u.search = new URLSearchParams({ role: "patient", s: sid }).toString();
+  return u.toString();
+}
+
+// 文字列 → QR の <svg> 文字列（端末の中で作る。外部サービスには送らない）。el.innerHTML = qrSvg(url) で表示
+export function qrSvg(text) {
+  const qr = qrcode(0, "M");
+  qr.addData(text);
+  qr.make();
+  return qr.createSvgTag({ cellSize: 4, margin: 4, scalable: true });
 }
 
 // session の中身（patientLang など）。メンバーになってから呼ぶ
