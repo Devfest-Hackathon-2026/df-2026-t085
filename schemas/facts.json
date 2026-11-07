@@ -1,0 +1,50 @@
+{
+  "type": "object",
+  "properties": {
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "doctor_gloss": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "symptom",
+              "onset",
+              "frequency",
+              "severity",
+              "medication",
+              "allergy",
+              "other"
+            ]
+          },
+          "negated": {
+            "type": "boolean"
+          },
+          "uncertain": {
+            "type": "boolean"
+          },
+          "time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "doctor_gloss",
+          "kind",
+          "negated",
+          "uncertain"
+        ]
+      }
+    }
+  },
+  "required": [
+    "facts"
+  ]
+}

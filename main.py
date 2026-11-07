@@ -13,6 +13,7 @@
 import logging
 import os
 import threading
+import time
 from contextlib import asynccontextmanager
 
 import firebase_admin
@@ -132,36 +133,63 @@ def healthz():
 
 @app.post("/analyze")
 def analyze(ref: MessageRef, uid: str = Depends(current_uid)):
-    """患者の発言を解析する。確認質問が無ければそのまま翻訳まで進めて confirmed にする。"""
+    """患者の発言を解析する。確認質問が無ければそのまま翻訳まで進めて confirmed にする。
+
+    患者の待ち時間を縮めるため、Gemini を3本並列に投げる（docs/ai-pipeline.md「待ち時間を縮める」）:
+      clarify  確認質問だけ。出力が短く速い → 返ったらすぐ Firestore に書く（画面に質問が出る）
+      facts    医師画面の補助表示。患者は待たないので、後から同じメッセージに書き足す
+      translate 確認質問なしだった場合に備えた先回りの翻訳。質問ありなら結果は捨てる
+    """
+    t0 = time.time()
     session, m_ref, msg = _load(ref, uid)
     if msg.get("from") != "patient":
         raise HTTPException(400, "analyze は患者の発言だけです（医師の発言は /translate）")
     if msg.get("status") not in ("analyzing", "error"):
         raise HTTPException(409, f"status が {msg.get('status')} なので解析済みです")
-    m_ref.update({"status": "analyzing", "error": firestore.DELETE_FIELD})
 
+    args = (msg["original"], session["patientLang"], session["doctorLang"])
+    f_tr = unsaid_ai.submit(_patient_translate, session, msg)
+    if unsaid_ai.ANALYZE_MODE == "single":
+        f_clar = f_facts = unsaid_ai.submit(unsaid_ai.analyze_single, *args)
+    else:
+        f_clar = unsaid_ai.submit(unsaid_ai.clarify, *args)
+        f_facts = unsaid_ai.submit(unsaid_ai.facts, *args)
+    if msg.get("status") == "error":  # 「もう一度」のときだけ。普段は書き込み1回分の往復を省く
+        m_ref.update({"status": "analyzing", "error": firestore.DELETE_FIELD})
+
+    # 1) 確認質問（患者が待っているもの）
     try:
-        out, sec = unsaid_ai.analyze(msg["original"], session["patientLang"], session["doctorLang"])
-        log.info("analyze %.1fs needs_clarification=%s", sec, out["needs_clarification"])
-        update = {"facts": out["facts"], "clarification": None, "translation": None}
+        out, _ = f_clar.result()
         if out["clarifications"]:
             c = out["clarifications"][0]
-            update["clarification"] = {
-                "target": c["target"],
-                "question": c["question"],
-                "ui_type": c["ui_type"],
-                "options": c["options"],
-                "fixed_options": c["fixed_options"],
-                "answer": None,
+            update = {
+                "clarification": {
+                    "target": c["target"],
+                    "question": c["question"],
+                    "ui_type": c["ui_type"],
+                    "options": c["options"],
+                    "fixed_options": c["fixed_options"],
+                    "answer": None,
+                },
+                "translation": None,
+                "status": "clarifying",
             }
-            update["status"] = "clarifying"
         else:
-            update["translation"] = _patient_translate(session, msg)
-            update["status"] = "confirmed"
+            update = {"clarification": None, "translation": f_tr.result(), "status": "confirmed"}
     except Exception as e:
         _fail(m_ref, e)
-
     m_ref.update(update)
+    question_sec = time.time() - t0
+
+    # 2) facts（医師画面の補助）。失敗しても発言は止めない
+    try:
+        update["facts"] = f_facts.result()[0]["facts"]
+    except Exception:
+        log.exception("facts failed")
+        update["facts"] = []
+    m_ref.update({"facts": update["facts"]})
+    log.info("analyze mode=%s status=%s shown=%.1fs facts=%.1fs",
+             unsaid_ai.ANALYZE_MODE, update["status"], question_sec, time.time() - t0)
     return update
 
 
