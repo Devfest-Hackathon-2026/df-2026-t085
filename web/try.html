@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UNSAID 接続テスト</title>
+<!-- Yusei の画面ができる前に、web/unsaid.js だけで 患者 ⇔ 医師 の流れを通すための最小のページ（見た目は気にしない） -->
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 640px; margin: 0 auto; padding: 16px; background: #fff; color: #111; }
+  .msg { border: 1px solid #ccc; border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
+  .me { background: #eef6ff; }
+  .muted { color: #666; font-size: 14px; }
+  .note { color: #a40; }
+  button { margin: 4px 4px 0 0; padding: 6px 12px; }
+  input { padding: 6px; width: 70%; }
+  mark { background: #ffe58a; }
+</style>
+</head>
+<body>
+<h1 id="title">UNSAID 接続テスト</h1>
+<div id="setup"></div>
+<p id="info" class="muted"></p>
+<div id="list"></div>
+<div id="composer" hidden>
+  <input id="text"><button id="say">送る</button>
+</div>
+<script type="module">
+import * as unsaid from "./unsaid.js";
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, text, cls) => { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; };
+const params = new URLSearchParams(location.search);
+const role = params.get("role") === "doctor" ? "doctor" : "patient";
+let sid = params.get("s");
+$("title").textContent = role === "doctor" ? "医師（日本語）" : "患者";
+
+const fail = (err) => { console.error(err); $("info").textContent = "失敗: " + (err.message || err); };
+
+async function start() {
+  await unsaid.login();
+  if (role === "doctor") await unsaid.joinSession(sid);
+  const doctorUrl = `${location.origin}${location.pathname}?role=doctor&s=${sid}`;
+  $("info").textContent = role === "patient" ? `session: ${sid}　医師の画面: ${doctorUrl}` : `session: ${sid}`;
+  $("composer").hidden = false;
+  unsaid.watchMessages(sid, render, fail);
+}
+
+if (role === "patient" && !sid) {
+  const sel = el("select");
+  for (const l of ["en", "zh-CN", "vi"]) sel.append(new Option(l, l));
+  const b = el("button", "session を作る");
+  b.onclick = async () => {
+    try {
+      sid = await unsaid.createSession(sel.value);
+      history.replaceState(null, "", `?role=patient&s=${sid}`);
+      $("setup").replaceChildren();
+      await start();
+    } catch (e) { fail(e); }
+  };
+  $("setup").append("患者の言語 ", sel, " ", b);
+} else if (!sid) {
+  $("info").textContent = "患者の画面に出る「医師の画面」の URL で開いてください";
+} else {
+  start().catch(fail);
+}
+
+$("say").onclick = async () => {
+  const text = $("text").value.trim();
+  if (!text) return;
+  $("text").value = "";
+  unsaid.say(sid, role, text).catch(fail);
+};
+
+function highlight(original, target) {
+  const p = el("div");
+  const i = target ? original.indexOf(target) : -1;
+  if (i < 0) { p.textContent = original; return p; }
+  p.append(original.slice(0, i), el("mark", target), original.slice(i + target.length));
+  return p;
+}
+
+function render(msgs) {
+  const list = $("list");
+  list.replaceChildren();
+  for (const m of msgs) {
+    const mine = m.from === role;
+    const box = el("div", null, "msg" + (mine ? " me" : ""));
+    const tr = m.translation;
+    const act = (label, fn) => { const b = el("button", label); b.onclick = () => fn().catch(fail); box.append(b); };
+
+    if (mine) {
+      box.append(highlight(m.original, m.clarification?.target));
+      if (m.status === "analyzing") box.append(el("div", "確認しています…", "muted"));
+      if (m.status === "clarifying" && !m.clarification?.answer) {
+        const c = m.clarification;
+        box.append(el("div", c.question));
+        for (const o of c.options ?? []) act(o, () => unsaid.answer(sid, m.id, "option", o));
+        act(c.fixed_options?.unsure ?? "うまく説明できない", () => unsaid.answer(sid, m.id, "unsure"));
+        act(c.fixed_options?.free_text ?? "自分で書く", async () => {
+          const t = prompt(c.fixed_options?.free_text ?? "自分で書く");
+          if (t) await unsaid.answer(sid, m.id, "free_text", t);
+        });
+      }
+      if (m.status === "clarifying" && m.clarification?.answer) box.append(el("div", "翻訳しています…", "muted"));
+      if (m.status === "confirmed") {
+        box.append(el("div", "相手にはこう伝わります: " + (tr?.back_translation ?? ""), "muted"));
+        act("送信", () => unsaid.send(sid, m.id));
+      }
+      if (m.status === "sent") box.append(el("div", m.from === "doctor" ? "送信済み（患者には: " + (tr?.back_translation ?? "") + "）" : "送信済み", "muted"));
+      if (m.status === "received") box.append(el("div", "既読", "muted"));
+      if (m.status === "error") { box.append(el("div", "失敗しました", "note")); act("もう一度", () => unsaid.retry(sid, m)); }
+    } else {
+      if (!["sent", "received"].includes(m.status)) continue; // 相手が送るまでは見せない
+      box.append(el("div", tr?.text ?? ""));
+      if (tr?.note) box.append(el("div", "注意: " + tr.note, "note"));
+      if (role === "doctor") {
+        box.append(el("div", "原文: " + m.original, "muted"));
+        for (const f of m.facts ?? []) box.append(el("div", "・" + (f.doctor_gloss || f.text), "muted"));
+        if (m.status === "sent") unsaid.receive(sid, m.id).catch(fail);
+      }
+    }
+    list.append(box);
+  }
+}
+</script>
+</body>
+</html>

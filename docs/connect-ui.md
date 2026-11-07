@@ -48,6 +48,14 @@ python -m http.server 8000
 Chrome で http://localhost:8000/stt-test.html を開いて、ログイン → 録音 → 送る が通れば、設定は正しい。
 （マイクは `localhost` か `https` でしか動かない。HTML をダブルクリックで開くと動かない）
 
+### 2-1b. 2つの画面で流れを通す（Yusei の画面ができる前でも）
+
+`web/try.html` は `web/unsaid.js` だけで作った最小のページ。上と同じく `web` で `python -m http.server 8000` をしてから:
+
+1. 普通の Chrome で http://localhost:8000/try.html を開く → これが **患者**。言語を選んで「session を作る」。
+2. 画面に出る「医師の画面」の URL を、**シークレットウィンドウ**（別の人としてログインさせるため）で開く → これが **医師**。
+3. 患者で英語を送る → 確認質問に答える → 送信 → 医師に日本語で出る → 医師が日本語で返す。
+
 ### 2-2. 画面から呼ぶ関数
 
 画面のファイルを `web/` に置いて、`<script type="module">` から import する（ビルド不要）。
