@@ -93,6 +93,8 @@ mark { background: var(--mark); color: var(--ink); border-radius: 4px; padding: 
 .p-doctor { background: var(--soft); border-radius: 16px; padding: 18px 20px; }
 .p-doctor .who { font-size: 13px; color: var(--sub); }
 .p-doctor .say { font-size: 22px; font-weight: 600; line-height: 1.45; margin-top: 6px; }
+.p-doctor + .p-doctor { margin-top: 10px; }
+.p-doctor.old .say { font-size: 17px; font-weight: 500; }
 .p-status { font-size: 14px; color: var(--ok); margin-top: 14px; }
 .p-speak { display: flex; flex-direction: column; align-items: center; gap: 14px; }
 .p-speak .mic { width: 96px; height: 96px; }

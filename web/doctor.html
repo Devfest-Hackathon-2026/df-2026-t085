@@ -12,7 +12,7 @@
 <div id="app"></div>
 <script type="module">
 import * as unsaid from "./unsaid.js";
-import { h, MIC_SVG, STOP_SVG, toast, micController, buildMemo, isConfirmed, ATTRS } from "./ui.js";
+import { h, MIC_SVG, STOP_SVG, toast, micController, buildMemo, isConfirmed, ATTRS, stuckWatch } from "./ui.js";
 
 const LANG_NAME = { en: "英語", "zh-CN": "中国語", vi: "ベトナム語" };
 // 問診メモの並び。facts の kind ごとに埋まった項目だけを出す
@@ -26,6 +26,7 @@ const params = new URLSearchParams(location.search);
 let sid = params.get("s");
 const S = { session: null, msgs: [], mic: "idle", openOrig: new Set(), sending: false };
 let mic;
+let watch; // 待ちのまま止まった発言を見つける（ui.js）
 
 const fail = (e) => { console.error(e); toast("失敗しました: " + (e?.message ?? e)); };
 
@@ -98,7 +99,11 @@ function main(session) {
     if (!text || S.sending) return;
     S.sending = true;
     input.value = "";
-    try { await unsaid.say(sid, "doctor", text); } catch (e) { input.value = text; fail(e); }
+    try { await unsaid.say(sid, "doctor", text); } catch (e) {
+      // 発言はできたが API に届かなかった: その発言に「もう一度」を出す。発言自体が無ければ文字を入力欄に戻す
+      if (e.messageId) { watch.fail(e.messageId); refresh(); } else input.value = text;
+      fail(e);
+    }
     S.sending = false;
   }
 
@@ -118,6 +123,7 @@ function main(session) {
         h("small", {}, "診断はしません"),
         h("button", { class: "btn-quiet", onclick: end }, "診察を終える")))));
 
+  watch = stuckWatch(() => { if (S.msgs.some((m) => m.status === "analyzing")) refresh(); });
   unsaid.watchMessages(sid, (msgs) => {
     S.msgs = msgs;
     log.replaceChildren(...renderLog());
@@ -142,8 +148,9 @@ function renderLog() {
 }
 
 function mine(m) {
-  const st = m.status === "analyzing" ? h("span", { class: "st wait" }, "翻訳中…")
-    : m.status === "error" ? h("button", { class: "btn-link", onclick: () => unsaid.retry(sid, m).catch(fail) }, "もう一度")
+  const again = () => { watch.reset(m); refresh(); unsaid.retry(sid, m).catch(fail); };
+  const st = m.status === "error" || watch.isStuck(m) ? h("button", { class: "btn-link", onclick: again }, "もう一度")
+    : m.status === "analyzing" ? h("span", { class: "st wait" }, "翻訳中…")
     : h("span", { class: "st" }, "✓ 送信済み");
   return h("div", { class: "d-mine", title: m.translation?.back_translation ? `患者には: ${m.translation.back_translation}` : null },
     m.original, " ", st);

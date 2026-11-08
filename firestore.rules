@@ -1,55 +1,77 @@
 rules_version = '2';
-// UNSAID の Firestore ルール（案）。Gemini の結果（facts / clarification の中身 / translation / error）は
+// UNSAID の Firestore ルール。Gemini の結果（facts / clarification の中身 / translation / error / lockedUntil）は
 // Cloud Run（Admin SDK、ルールの対象外）だけが書く。端末が書けるのは下の決めた項目だけ。
+//
+// 役割: session を作った人（members[0]）が医師、QR で参加した人（members[1]）が患者。
+// 医師の発言は医師だけ、患者の発言・回答・送信は患者だけが書ける（相手になりすませない）。
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
+    function sess(sessionId) {
+      return get(/databases/$(database)/documents/sessions/$(sessionId)).data;
+    }
     function isMember(sessionId) {
-      return signedIn() &&
-        request.auth.uid in get(/databases/$(database)/documents/sessions/$(sessionId)).data.members;
+      return signedIn() && request.auth.uid in sess(sessionId).members;
+    }
+    function isDoctor(sessionId) {
+      return signedIn() && sess(sessionId).members[0] == request.auth.uid;
+    }
+    function isPatient(sessionId) {
+      return signedIn() && sess(sessionId).members.size() == 2 && sess(sessionId).members[1] == request.auth.uid;
     }
     function onlyChanges(keys) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
     }
+    function patientLangs() { return ['en', 'zh-CN', 'vi']; }
 
     match /sessions/{sessionId} {
       allow read: if signedIn() && request.auth.uid in resource.data.members;
-      // 作る人（医師）は自分1人だけを members に入れる。patientLang は null（患者が参加時に決める）か言語
-      allow create: if signedIn() && request.resource.data.members == [request.auth.uid]
-        && (request.resource.data.patientLang == null || request.resource.data.patientLang in ['en', 'zh-CN', 'vi']);
-      // QR で参加: members に自分を1人足す更新だけを許す。session id を知っている人だけが参加できる（id が合言葉）。
-      // QR が写真に撮られても困らないように、参加は 2人目まで・作ってから 30 分以内に限る。
-      // patientLang はまだ null のときだけ、参加と同時に1回だけ書ける（後から言語を変えられない）
+      // 医師が作る: 自分1人だけを members に入れ、patientLang は null（患者が参加時に決める）。
+      // createdAt はサーバーの時刻だけ（端末が未来の時刻を書いて「30分以内」をすり抜けられないように）
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['patientLang', 'doctorLang', 'members', 'createdAt'])
+        && request.resource.data.members == [request.auth.uid]
+        && request.resource.data.patientLang == null
+        && request.resource.data.doctorLang == 'ja'
+        && request.resource.data.createdAt == request.time;
+      // QR で参加（患者）: 医師1人だけの session の members の後ろに自分を足し、同時に patientLang を1回だけ書く。
+      // session id を知っている人だけが参加できる（id が合言葉）。QR が写真に撮られても困らないように、
+      // 参加は 2人目まで・作ってから 30 分以内に限る。後から言語を変えたり、人を入れ替えたりはできない
       allow update: if signedIn() && onlyChanges(['members', 'patientLang'])
-        && request.resource.data.members.hasAll(resource.data.members)
-        && request.resource.data.members.removeAll(resource.data.members).hasOnly([request.auth.uid])
-        && request.resource.data.members.size() <= 2
+        && resource.data.members.size() == 1
+        && request.resource.data.members == resource.data.members.concat([request.auth.uid])
         && request.time < resource.data.createdAt + duration.value(30, 'm')
-        && (request.resource.data.patientLang == resource.data.patientLang
-          || (resource.data.patientLang == null && request.resource.data.patientLang in ['en', 'zh-CN', 'vi']));
+        && resource.data.patientLang == null
+        && request.resource.data.patientLang in patientLangs();
 
       match /messages/{messageId} {
         allow read: if isMember(sessionId);
 
-        // 発言を作る: 本文と from だけ。status は必ず analyzing から始める
+        // 発言を作る: 本文と from だけ。status は必ず analyzing から、createdAt はサーバーの時刻（並び順に使う）。
+        // from は自分の役割と同じでないといけない
         allow create: if isMember(sessionId)
           && request.resource.data.keys().hasOnly(['from', 'original', 'status', 'createdAt'])
-          && request.resource.data.from in ['patient', 'doctor']
+          && ((request.resource.data.from == 'doctor' && isDoctor(sessionId))
+            || (request.resource.data.from == 'patient' && isPatient(sessionId)))
           && request.resource.data.status == 'analyzing'
+          && request.resource.data.createdAt == request.time
           && request.resource.data.original is string
           && request.resource.data.original.size() > 0
           && request.resource.data.original.size() <= 1000;
 
         allow update: if isMember(sessionId) && (
-          // 患者: 確認質問への回答（clarification.answer だけを書き換える）
-          (resource.data.status in ['clarifying', 'error'] && onlyChanges(['clarification'])
+          // 患者: 自分の発言の確認質問への回答（clarification.answer だけを書き換える）
+          (isPatient(sessionId) && resource.data.from == 'patient'
+            && resource.data.status in ['clarifying', 'error'] && onlyChanges(['clarification'])
             && request.resource.data.clarification.diff(resource.data.clarification).affectedKeys().hasOnly(['answer'])
             && request.resource.data.clarification.answer.type in ['option', 'free_text', 'unsure'])
-          // 患者: 逆翻訳を確認して送信
-          || (resource.data.status == 'confirmed' && request.resource.data.status == 'sent'
+          // 患者: 自分の発言の逆翻訳を確認して送信
+          || (isPatient(sessionId) && resource.data.from == 'patient'
+            && resource.data.status == 'confirmed' && request.resource.data.status == 'sent'
             && onlyChanges(['status', 'sentAt']))
-          // 医師: 受け取った
-          || (resource.data.status == 'sent' && request.resource.data.status == 'received'
+          // 医師: 患者の発言を受け取った
+          || (isDoctor(sessionId) && resource.data.from == 'patient'
+            && resource.data.status == 'sent' && request.resource.data.status == 'received'
             && onlyChanges(['status', 'receivedAt']))
         );
         allow delete: if false;

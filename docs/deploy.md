@@ -71,6 +71,12 @@ gcloud run services update unsaid-api --region asia-northeast1 --min-instances 1
 gcloud run services update unsaid-api --region asia-northeast1 --min-instances 0   # デモ後
 ```
 
+当日は他のチームも Gemini を使うので混雑（429）が増える。予備のモデルを入れておくと、元のモデルで2回弾かれた時点で切り替える（`thinking_level` に対応したモデルを選ぶ。空なら切り替えない）。
+
+```powershell
+gcloud run services update unsaid-api --region asia-northeast1 --update-env-vars FALLBACK_MODEL=<予備のモデル名>
+```
+
 本番では `--set-env-vars ALLOWED_ORIGINS=https://<App Hosting の URL>` を付けて、呼べるサイトを自分たちの画面だけにする。
 
 ## つまずいたとき

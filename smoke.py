@@ -6,7 +6,7 @@
   python smoke.py --api https://unsaid-api-xxxx.asia-northeast1.run.app --key <firebaseConfig の apiKey>
   python smoke.py --api ... --key ... --lang vi --text "Dạo này tôi hay bị đau đầu."
 
-流れ: 患者・医師の2人で匿名ログイン → 患者が session を作る → 医師が参加 → 患者が発言 → /analyze
+流れ: 患者・医師の2人で匿名ログイン → 医師が session を作る → 患者が言語を選んで参加 → 患者が発言 → /analyze
      → （確認質問があれば）最初の選択肢で回答 → /translate → 患者が送信 → 医師が受け取る
      → 医師が発言 → /translate
 """
@@ -78,9 +78,14 @@ def doc_get(path, token):
     return {k: dec(v) for k, v in body.get("fields", {}).items()}
 
 
-def doc_create(collection, doc_id, data, token):
-    code, body = http("POST", f"{FS}/{collection}?documentId={doc_id}", fields(data), token)
-    must(code == 200, f"Firestore 作成 {collection}/{doc_id}", code, body)
+def doc_create(collection, doc_id, data, token, step=None, expect=200):
+    """createdAt はサーバーの時刻で入れる（画面の serverTimestamp() と同じ。firestore.rules が求める）。"""
+    name = f"projects/{PROJECT}/databases/(default)/documents/{collection}/{doc_id}"
+    write = {"update": {"name": name, **fields(data)}, "currentDocument": {"exists": False},
+             "updateTransforms": [{"fieldPath": "createdAt", "setToServerValue": "REQUEST_TIME"}]}
+    code, body = http("POST", f"{FS}:commit", {"writes": [write]}, token)
+    ok = code == 200 if expect == 200 else code == expect
+    must(ok, step or f"Firestore 作成 {collection}/{doc_id}", code, body)
 
 
 def doc_patch(path, data, mask, token, step):
@@ -126,8 +131,9 @@ def main():
     pt, puid = sign_in(a.key, "患者")
     dt, duid = sign_in(a.key, "医師")
     sid = "smoke-" + uuid.uuid4().hex[:8]
-    doc_create("sessions", sid, {"patientLang": a.lang, "doctorLang": "ja", "members": [puid]}, pt)
-    doc_patch(f"sessions/{sid}", {"members": [puid, duid]}, ["members"], dt, "医師が session に参加")
+    doc_create("sessions", sid, {"patientLang": None, "doctorLang": "ja", "members": [duid]}, dt, "医師が session を作る")
+    doc_patch(f"sessions/{sid}", {"members": [duid, puid], "patientLang": a.lang}, ["members", "patientLang"], pt,
+              "患者が言語を選んで参加")
 
     print("2. 患者の発言")
     mid = "p-" + uuid.uuid4().hex[:8]
@@ -164,9 +170,10 @@ def main():
     print(f"       患者への訳: {m['translation']['text']}")
 
     print("4. 守られているか")
-    code, _ = http("POST", f"{FS}/sessions/{sid}/messages?documentId=x", fields(
-        {"from": "patient", "original": "hi", "status": "confirmed"}), pt)
-    must(code == 403, "端末は analyzing 以外の状態で発言を作れない", code)
+    doc_create(f"sessions/{sid}/messages", "x1", {"from": "patient", "original": "hi", "status": "confirmed"}, pt,
+               "端末は analyzing 以外の状態で発言を作れない", expect=403)
+    doc_create(f"sessions/{sid}/messages", "x2", {"from": "doctor", "original": "hi", "status": "analyzing"}, pt,
+               "患者は医師になりすませない", expect=403)
     st, _ = sign_in(a.key, "部外者")
     code, _ = http("GET", f"{FS}/sessions/{sid}", token=st)
     must(code == 403, "メンバー以外は session を読めない", code)
