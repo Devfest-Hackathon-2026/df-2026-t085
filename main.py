@@ -117,6 +117,9 @@ def _translation(out, lang):
         "text": out["translation"],
         "back_translation": out["back_translation"],
         "note": out["note"],
+        # 医師画面の「『しばらく』→ 約1週間」の1行。確認していない発言・医師の発言は ""
+        "clarified_target": out.get("clarified_target", ""),
+        "clarified_answer": out.get("clarified_answer", ""),
     }
 
 

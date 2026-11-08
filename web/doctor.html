@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UNSAID 医師</title>
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+<!-- 医師の PC（UI 案B v2）。「問診を始める」→ QR を全画面 → 患者が参加したら自動で閉じる → 会話＋問診メモ。
+     患者の発言は「送信」された後だけ出す（確認中のものは「患者が確認しています…」の1行だけ） -->
+<div id="app"></div>
+<script type="module">
+import * as unsaid from "./unsaid.js";
+import { h, MIC_SVG, STOP_SVG, toast, micController } from "./ui.js";
+
+const LANG_NAME = { en: "英語", "zh-CN": "中国語", vi: "ベトナム語" };
+// 問診メモの並び。facts の kind ごとに埋まった項目だけを出す
+const KINDS = [
+  ["symptom", "症状"], ["onset", "いつから"], ["frequency", "頻度"], ["severity", "程度"],
+  ["medication", "薬"], ["allergy", "アレルギー"], ["other", "その他"],
+];
+
+const app = document.getElementById("app");
+const params = new URLSearchParams(location.search);
+let sid = params.get("s");
+const S = { session: null, msgs: [], mic: "idle", openOrig: new Set(), sending: false };
+let mic;
+
+const fail = (e) => { console.error(e); toast("失敗しました: " + (e?.message ?? e)); };
+
+// ── 開始画面と QR ──
+function startScreen() {
+  app.replaceChildren(h("section", { class: "d-start" },
+    h("h1", {}, "UNSAID"),
+    h("p", {}, "患者さんのスマホで QR を読み取ってもらいます"),
+    h("button", { class: "btn-primary", onclick: begin }, "問診を始める")));
+}
+
+async function begin() {
+  try {
+    sid = await unsaid.createSession();
+    history.replaceState(null, "", `?s=${sid}`);
+    showQr();
+  } catch (e) { fail(e); }
+}
+
+// QR を全画面で出し、患者が言語を選んで参加したら自動で閉じる
+function showQr() {
+  const url = unsaid.joinUrl(sid, "patient.html");
+  const overlay = h("div", { class: "qr-overlay", role: "dialog", "aria-modal": "true", "aria-label": "参加用 QR コード" },
+    h("h1", {}, "スマホで読み取ってください"),
+    h("p", { class: "langs", lang: "mul" }, "Scan with your phone · 请用手机扫描 · Quét bằng điện thoại"),
+    h("div", { class: "qr", html: unsaid.qrSvg(url) }),
+    h("p", {}, "30分以内・1人だけ参加できます"),
+    h("button", { class: "btn-quiet", onclick: () => { stop(); overlay.remove(); location.href = "doctor.html"; } }, "やめる"));
+  document.body.append(overlay);
+  const stop = unsaid.watchSession(sid, (s) => {
+    if (!s?.patientLang) return;
+    stop();
+    overlay.remove();
+    main(s);
+  }, fail);
+}
+
+// ── 問診中の画面 ──
+function main(session) {
+  S.session = session;
+  mic = micController({
+    Recorder: unsaid.Recorder,
+    transcribe: (wav) => unsaid.transcribe(sid, "doctor", wav),
+    onText: (text) => {
+      if (!text) { toast("聞き取れませんでした。もう一度話すか、入力してください"); return; }
+      input.value = input.value ? `${input.value} ${text}` : text;
+      input.focus();
+    },
+    onChange: (st) => { S.mic = st; paintMic(); },
+    onError: fail,
+  });
+
+  const log = h("div", { class: "d-log", "aria-live": "polite" });
+  const memo = h("div", { class: "d-memo-items" });
+  const input = h("input", { id: "dinput", placeholder: "押して話す、または入力", autocomplete: "off",
+    onkeydown: (e) => { if (e.key === "Enter" && !e.isComposing) say(); } });
+  const micBtn = h("button", { class: "mic", onclick: () => mic.toggle() });
+  const paintMic = () => {
+    const rec = S.mic === "recording";
+    micBtn.className = "mic" + (rec ? " recording" : "");
+    micBtn.innerHTML = rec ? STOP_SVG : MIC_SVG;
+    micBtn.setAttribute("aria-label", rec ? "話し終わる" : "押して話す");
+    micBtn.disabled = S.mic === "transcribing";
+    input.placeholder = rec ? "聞いています…もう一度押すと止まります" : S.mic === "transcribing" ? "文字にしています…" : "押して話す、または入力";
+  };
+  paintMic();
+
+  async function say() {
+    const text = input.value.trim();
+    if (!text || S.sending) return;
+    S.sending = true;
+    input.value = "";
+    try { await unsaid.say(sid, "doctor", text); } catch (e) { input.value = text; fail(e); }
+    S.sending = false;
+  }
+
+  app.replaceChildren(h("div", { class: "d-app" },
+    h("section", { class: "d-main" },
+      h("div", { class: "d-head" }, h("span", { class: "dot" }), `患者（${LANG_NAME[session.patientLang] ?? session.patientLang}）と接続中`),
+      log,
+      h("div", { class: "d-input" },
+        micBtn,
+        h("label", { for: "dinput", class: "sr-only" }, "医師の発言"),
+        input,
+        h("button", { class: "send", onclick: say }, "送る"))),
+    h("aside", { class: "d-memo", "aria-label": "問診メモ" },
+      h("h2", {}, "問診メモ"),
+      memo,
+      h("div", { class: "d-foot" },
+        h("small", {}, "診断はしません"),
+        h("button", { class: "btn-quiet", onclick: end }, "診察を終える")))));
+
+  unsaid.watchMessages(sid, (msgs) => {
+    S.msgs = msgs;
+    log.replaceChildren(...renderLog());
+    memo.replaceChildren(...renderMemo());
+    log.scrollTop = log.scrollHeight; // 新しい発言が来たら一番下（最新）を見せる
+    for (const m of msgs) if (m.from === "patient" && m.status === "sent") unsaid.receive(sid, m.id).catch(fail);
+  }, fail);
+  input.focus();
+}
+
+const shown = (m) => m.from === "doctor" || ["sent", "received"].includes(m.status);
+
+function renderLog() {
+  const visible = S.msgs.filter(shown);
+  const latestPt = visible.filter((m) => m.from === "patient").at(-1);
+  const out = visible.map((m) => (m.from === "doctor" ? mine(m) : patient(m, m === latestPt)));
+  const lastPt = S.msgs.filter((m) => m.from === "patient").at(-1);
+  if (lastPt && !shown(lastPt)) {
+    out.push(h("div", { class: "d-pending" }, h("div", { class: "spinner", "aria-hidden": "true" }), "患者が確認しています…"));
+  }
+  return out;
+}
+
+function mine(m) {
+  const st = m.status === "analyzing" ? h("span", { class: "st wait" }, "翻訳中…")
+    : m.status === "error" ? h("button", { class: "btn-link", onclick: () => unsaid.retry(sid, m).catch(fail) }, "もう一度")
+    : h("span", { class: "st" }, "✓ 送信済み");
+  return h("div", { class: "d-mine", title: m.translation?.back_translation ? `患者には: ${m.translation.back_translation}` : null },
+    m.original, " ", st);
+}
+
+function patient(m, latest) {
+  const c = m.clarification;
+  const a = c?.answer;
+  const tr = m.translation ?? {};
+  const open = S.openOrig.has(m.id);
+  const toggle = h("button", { class: "btn-link", "aria-expanded": String(open),
+    onclick: () => { open ? S.openOrig.delete(m.id) : S.openOrig.add(m.id); refresh(); } }, open ? "原文を閉じる" : "原文");
+  const checked = a && a.type !== "unsure";
+  // 「何をどう確かめたか」。日本語（tr.clarified_*）が無い古い発言は患者の言語のまま出す
+  const how = checked && `「${tr.clarified_target || c.target}」→ ${tr.clarified_answer || a.text}`;
+  return h("div", { class: "d-pt" + (latest ? " latest" : "") },
+    h("div", { class: "tr" }, tr.text ?? ""),
+    (latest || checked || tr.note) && h("div", { class: "d-meta" },
+      checked && h("span", { class: "badge-ok" }, "本人が確認済み"),
+      how && h("span", {}, how),
+      toggle),
+    tr.note && h("div", { class: "d-note" }, tr.note),
+    open && h("div", { class: "d-orig", lang: S.session?.patientLang }, m.original));
+}
+
+function renderMemo() {
+  const groups = new Map();
+  for (const m of S.msgs) {
+    if (m.from !== "patient" || !["sent", "received"].includes(m.status)) continue;
+    const a = m.clarification?.answer;
+    const tr = m.translation ?? {};
+    for (const f of m.facts ?? []) {
+      // 確認した語を含む項目は、本人が確かめた内容で置き換える
+      const confirmed = a && a.type !== "unsure" && tr.clarified_answer && m.clarification.target && f.text.includes(m.clarification.target);
+      const item = { text: confirmed ? tr.clarified_answer : f.doctor_gloss || f.text, confirmed, negated: f.negated, uncertain: f.uncertain && !confirmed };
+      const list = groups.get(f.kind) ?? [];
+      if (!list.some((x) => x.text === item.text)) list.push(item);
+      groups.set(f.kind, list);
+    }
+  }
+  if (!groups.size) return [h("div", { class: "empty" }, "患者が送ると、ここに整理されます")];
+  return KINDS.filter(([k]) => groups.has(k)).map(([k, label]) => h("div", {},
+    h("div", { class: "k" }, label),
+    groups.get(k).map((it) => h("div", { class: "v" }, it.text,
+      it.negated && h("span", { class: "tag" }, "否定"),
+      it.uncertain && h("span", { class: "tag" }, "あいまい"),
+      it.confirmed && h("span", { class: "check", "aria-label": "本人が確認済み" }, "✓")))));
+}
+
+function refresh() {
+  const log = app.querySelector(".d-log");
+  const keep = log.scrollTop;
+  log.replaceChildren(...renderLog());
+  log.scrollTop = keep;
+}
+
+function end() {
+  if (!confirm("診察を終えて、次の患者さん用の画面に戻りますか？")) return;
+  mic?.close();
+  location.href = "doctor.html";
+}
+
+(async () => {
+  await unsaid.login();
+  if (!sid) return startScreen();
+  const s = await unsaid.mySession(sid);
+  if (!s) { history.replaceState(null, "", "doctor.html"); return startScreen(); }
+  if (s.patientLang) main(s); else { startScreen(); showQr(); }
+})().catch(fail);
+</script>
+</body>
+</html>

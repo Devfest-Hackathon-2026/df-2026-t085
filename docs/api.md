@@ -59,7 +59,7 @@ API のレスポンスを使わなくても、結果は同じメッセージに�
 | `createdAt` | 端末（作成時） | `serverTimestamp()` |
 | `facts` | API | `[{text, doctor_gloss, kind, negated, uncertain, time?}]`。医師画面の補助表示。`status` が `clarifying` / `confirmed` になった直後はまだ無いことがある（1〜数秒後に届く。失敗したら `[]`） |
 | `clarification` | API（`answer` だけ患者の端末） | `null` か `{target, question, ui_type, options[], fixed_options{unsure, free_text}, answer}` |
-| `translation` | API | `null` か `{lang, text, back_translation, note}` |
+| `translation` | API | `null` か `{lang, text, back_translation, note, clarified_target, clarified_answer}`（`clarified_*` は確認に答えた患者の発言だけ。医師の言語で「しばらく」→「約1週間」。それ以外は `""`） |
 | `error` | API | 失敗したときだけ。例外名 |
 | `sentAt` / `receivedAt` | 患者の端末 / 医師の端末（医師の発言の `sentAt` は API） | `serverTimestamp()` |
 
