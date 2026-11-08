@@ -13,7 +13,7 @@
 <main id="app"></main>
 <script type="module">
 import * as unsaid from "./unsaid.js";
-import { h, MIC_SVG, STOP_SVG, highlight, toast, micController, buildMemo, isConfirmed, ATTRS, stuckWatch } from "./ui.js";
+import { h, icon, MIC_SVG, STOP_SVG, highlight, toast, micController, buildMemo, isConfirmed, ATTRS, stuckWatch } from "./ui.js";
 
 // 患者の画面の文言（PATIENT_LANGS と同じ言語）。確認質問・選択肢はサーバーが患者の言語で作る
 const T = {
@@ -27,7 +27,7 @@ const T = {
     noSession: "Please scan the QR code on the doctor's screen.", mic: "Speak", micStop: "Stop",
     writeHere: "Write your answer", micDenied: "The microphone is not allowed. Please type instead.",
     listen: "Listen", ended: "The consultation has ended. Your conversation has been deleted.",
-    memo: "My notes", memoSub: "What the doctor has received from you", memoEmpty: "Nothing sent yet.", close: "Close",
+    memo: "My notes", memoSub: "What the doctor has received from you", memoEmpty: "Nothing sent yet.", close: "Close", back: "Back",
     kinds: { symptom: "Symptoms", onset: "Since when", frequency: "How often", severity: "How bad", medication: "Medicine", allergy: "Allergies", other: "Other" },
   },
   "zh-CN": {
@@ -40,7 +40,7 @@ const T = {
     noSession: "请扫描医生屏幕上的二维码。", mic: "说话", micStop: "结束",
     writeHere: "写下你的回答", micDenied: "没有麦克风权限，请直接输入。",
     listen: "朗读", ended: "问诊已结束。对话内容已删除。",
-    memo: "我的记录", memoSub: "医生已经收到的内容", memoEmpty: "还没有发送内容。", close: "关闭",
+    memo: "我的记录", memoSub: "医生已经收到的内容", memoEmpty: "还没有发送内容。", close: "关闭", back: "返回",
     kinds: { symptom: "症状", onset: "从什么时候开始", frequency: "频率", severity: "程度", medication: "药物", allergy: "过敏", other: "其他" },
   },
   vi: {
@@ -53,7 +53,7 @@ const T = {
     noSession: "Hãy quét mã QR trên màn hình của bác sĩ.", mic: "Nói", micStop: "Dừng",
     writeHere: "Viết câu trả lời", micDenied: "Micro chưa được cho phép. Hãy gõ chữ.",
     listen: "Nghe", ended: "Buổi khám đã kết thúc. Cuộc trò chuyện đã được xóa.",
-    memo: "Ghi chú của tôi", memoSub: "Những gì bác sĩ đã nhận từ bạn", memoEmpty: "Chưa gửi gì.", close: "Đóng",
+    memo: "Ghi chú của tôi", memoSub: "Những gì bác sĩ đã nhận từ bạn", memoEmpty: "Chưa gửi gì.", close: "Đóng", back: "Quay lại",
     kinds: { symptom: "Triệu chứng", onset: "Từ khi nào", frequency: "Bao lâu một lần", severity: "Mức độ", medication: "Thuốc", allergy: "Dị ứng", other: "Khác" },
   },
 };
@@ -154,9 +154,10 @@ const screens = {
       h("div", { class: "p-body" },
         v.doctors.map((d, i) => h("div", { class: "p-doctor" + (i < v.doctors.length - 1 ? " old" : "") },
           h("div", { class: "who" }, t.doctor, canSpeak && h("button", { class: "btn-link p-listen",
-            "aria-label": t.listen, onclick: () => speak(d.translation?.text) }, "🔊 ", t.listen)),
+            "aria-label": t.listen, onclick: () => speak(d.translation?.text) }, icon("volume-2"), t.listen)),
           h("div", { class: "say" }, d.translation?.text ?? ""))),
-        v.lastSent && h("div", { class: "p-status" }, "✓ ", v.lastSent.status === "received" ? t.read : t.sent)),
+        v.lastSent && h("div", { class: "p-status" },
+          icon(v.lastSent.status === "received" ? "check-check" : "check"), v.lastSent.status === "received" ? t.read : t.sent)),
       h("div", { class: "p-spacer" }),
       h("div", { class: "p-speak" },
         h("button", { class: "mic" + (rec ? " recording" : ""), "aria-label": rec ? t.micStop : t.mic,
@@ -180,7 +181,7 @@ const screens = {
           const okBtn = h("button", { class: "btn-primary", disabled: true,
             onclick: () => answer(m, "free_text", ta.value.trim()) }, t.ok);
           return h("div", { class: "p-free" }, ta, okBtn,
-            h("button", { class: "btn-link", onclick: () => { S.freeText = false; render(true); } }, "←"));
+            h("button", { class: "btn-link btn-icon", onclick: () => { S.freeText = false; render(true); } }, icon("arrow-left"), t.back));
         })()
       : h("div", { class: "p-options" }, (c.options ?? []).map((o) =>
           h("button", { class: "p-option", onclick: () => answer(m, "option", o) }, o)));
@@ -230,7 +231,7 @@ const sheet = h("dialog", { class: "p-sheet", onclick: (e) => { if (e.target ===
 document.body.append(sheet);
 function paintMemo() {
   const { symptoms, others, count } = memoData();
-  const line = (it) => [it.negated ? `✕ ${it.text}` : it.text, it.confirmed && h("span", { class: "check", "aria-hidden": "true" }, " ✓")];
+  const line = (it) => [it.negated && h("span", { class: "neg" }, icon("x")), it.text, it.confirmed && h("span", { class: "check" }, icon("check"))];
   const groups = [];
   if (symptoms.length) groups.push(h("div", { class: "p-memo-group" }, h("div", { class: "k" }, t.kinds.symptom),
     symptoms.map((sy) => h("div", { class: "sym" }, h("div", { class: "v" }, line(sy)),

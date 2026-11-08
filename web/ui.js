@@ -14,8 +14,11 @@ export function h(tag, attrs = {}, ...children) {
   return e;
 }
 
-export const MIC_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
-export const STOP_SVG = '<svg viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>';
+import { iconSvg } from "./icons.js";
+export { icon } from "./icons.js";
+
+export const MIC_SVG = iconSvg("mic");
+export const STOP_SVG = iconSvg("square", { fill: true });
 
 // 原文のうち target の所を <mark> にする
 export function highlight(original, target) {

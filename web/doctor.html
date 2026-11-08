@@ -12,7 +12,7 @@
 <div id="app"></div>
 <script type="module">
 import * as unsaid from "./unsaid.js";
-import { h, MIC_SVG, STOP_SVG, toast, micController, buildMemo, isConfirmed, ATTRS, stuckWatch } from "./ui.js";
+import { h, icon, MIC_SVG, STOP_SVG, toast, micController, buildMemo, isConfirmed, ATTRS, stuckWatch } from "./ui.js";
 
 const LANG_NAME = { en: "英語", "zh-CN": "中国語", vi: "ベトナム語" };
 // 問診メモの並び。facts の kind ごとに埋まった項目だけを出す
@@ -152,7 +152,7 @@ function mine(m) {
   const again = () => { watch.reset(m); refresh(); unsaid.retry(sid, m).catch(fail); };
   const st = m.status === "error" || watch.isStuck(m) ? h("button", { class: "btn-link", onclick: again }, "もう一度")
     : m.status === "analyzing" ? h("span", { class: "st wait" }, "翻訳中…")
-    : h("span", { class: "st" }, "✓ 送信済み");
+    : h("span", { class: "st" }, icon("check"), "送信済み");
   return h("div", { class: "d-mine", title: m.translation?.back_translation ? `患者には: ${m.translation.back_translation}` : null },
     m.original, " ", st);
 }
@@ -170,7 +170,7 @@ function patient(m, latest) {
   return h("div", { class: "d-pt" + (latest ? " latest" : "") },
     h("div", { class: "tr" }, tr.text ?? ""),
     (latest || checked || tr.note) && h("div", { class: "d-meta" },
-      checked && h("span", { class: "badge-ok" }, "本人が確認済み"),
+      checked && h("span", { class: "badge-ok" }, icon("check"), "本人が確認済み"),
       how && h("span", {}, how),
       toggle),
     tr.note && h("div", { class: "d-note" }, tr.note),
@@ -221,7 +221,7 @@ function renderMemo() {
   const marks = (it) => [
     it.negated && h("span", { class: "tag" }, "否定"),
     it.uncertain && h("span", { class: "tag" }, "あいまい"),
-    it.confirmed && h("span", { class: "check", "aria-label": "本人が確認済み" }, "✓")];
+    it.confirmed && h("span", { class: "check", role: "img", "aria-label": "本人が確認済み" }, icon("check"))];
   const out = [];
   if (symptoms.length) out.push(h("div", {}, h("div", { class: "k" }, LABEL.symptom),
     symptoms.map((sy) => h("div", { class: "sym" },
