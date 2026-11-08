@@ -169,6 +169,12 @@ function patient(m, latest) {
     open && h("div", { class: "d-orig", lang: S.session?.patientLang }, m.original));
 }
 
+// 「頭痛がある」「頭痛があります」を同じ項目とみなすための鍵（語尾・句読点・空白を落とす）
+const memoKey = (t) => t.replace(/[。、．,.!！\s]/g, "")
+  .replace(/(があります|がある|がします|がする|あります|ある|します|する|です|ます)$/, "");
+// 1つの値に決まる項目。言い直したら最新を出し、前の値は小さく残す（食い違いに気づけるように）
+const SINGLE = new Set(["onset", "frequency", "severity"]);
+
 function renderMemo() {
   const groups = new Map();
   for (const m of S.msgs) {
@@ -179,18 +185,22 @@ function renderMemo() {
       // 確認した語を含む項目は、本人が確かめた内容で置き換える
       const confirmed = a && a.type !== "unsure" && tr.clarified_answer && m.clarification.target && f.text.includes(m.clarification.target);
       const item = { text: confirmed ? tr.clarified_answer : f.doctor_gloss || f.text, confirmed, negated: f.negated, uncertain: f.uncertain && !confirmed };
-      const list = groups.get(f.kind) ?? [];
-      if (!list.some((x) => x.text === item.text)) list.push(item);
+      const list = (groups.get(f.kind) ?? []).filter((x) => memoKey(x.text) !== memoKey(item.text));
+      list.push(item); // 同じ内容は新しい方で置き換え、最後に回す
       groups.set(f.kind, list);
     }
   }
   if (!groups.size) return [h("div", { class: "empty" }, "患者が送ると、ここに整理されます")];
-  return KINDS.filter(([k]) => groups.has(k)).map(([k, label]) => h("div", {},
-    h("div", { class: "k" }, label),
-    groups.get(k).map((it) => h("div", { class: "v" }, it.text,
-      it.negated && h("span", { class: "tag" }, "否定"),
-      it.uncertain && h("span", { class: "tag" }, "あいまい"),
-      it.confirmed && h("span", { class: "check", "aria-label": "本人が確認済み" }, "✓")))));
+  const value = (it) => h("div", { class: "v" }, it.text,
+    it.negated && h("span", { class: "tag" }, "否定"),
+    it.uncertain && h("span", { class: "tag" }, "あいまい"),
+    it.confirmed && h("span", { class: "check", "aria-label": "本人が確認済み" }, "✓"));
+  return KINDS.filter(([k]) => groups.has(k)).map(([k, label]) => {
+    const list = groups.get(k);
+    if (!SINGLE.has(k) || list.length === 1) return h("div", {}, h("div", { class: "k" }, label), list.map(value));
+    const older = list.slice(0, -1).map((x) => x.text).join("、");
+    return h("div", {}, h("div", { class: "k" }, label), value(list.at(-1)), h("div", { class: "prev" }, `前の答え: ${older}`));
+  });
 }
 
 function refresh() {

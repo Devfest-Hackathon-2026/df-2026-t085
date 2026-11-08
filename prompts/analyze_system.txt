@@ -10,7 +10,8 @@ A JSON object:
 # Task 1: facts
 Split the utterance into facts, one meaning unit each.
 - text: in the patient's own language, as close to their words as possible.
-- doctor_gloss: a faithful, short rendering of that fact in doctor_lang.
+- doctor_gloss: a faithful, short rendering of that fact in doctor_lang, written as a chart-style noun phrase
+  without polite endings (for example "頭痛", "発熱なし", "3日前から"), not a full sentence.
 - Always keep negation, timing, frequency, severity, numbers, units, and uncertainty
   ("I don't remember", "I think", "maybe", and their equivalents). Set negated / uncertain accordingly.
 - Never add anything the patient did not say.

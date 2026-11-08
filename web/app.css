@@ -139,6 +139,7 @@ mark { background: var(--mark); color: var(--ink); border-radius: 4px; padding: 
 .d-memo .v + .v { margin-top: 2px; }
 .d-memo .tag { font-size: 12px; font-weight: 600; color: var(--sub); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: 2px; }
 .d-memo .check { font-size: 14px; color: var(--ok); margin-left: 6px; }
+.d-memo .prev { font-size: 13px; color: var(--sub); margin-top: 4px; }
 .d-memo .empty { font-size: 15px; color: var(--faint); }
 .d-foot { margin-top: auto; display: flex; flex-direction: column; gap: 10px; }
 .d-foot small { font-size: 12px; color: var(--sub); }
