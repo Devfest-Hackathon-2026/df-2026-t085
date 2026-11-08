@@ -1,0 +1,1616 @@
+[
+ {
+  "lang": "en",
+  "group": "keyword",
+  "ask": true,
+  "targets": [
+   "for a while"
+  ],
+  "text": "I've had a headache for a while.",
+  "gemini": {
+   "sec": 3.1,
+   "status": "clarifying",
+   "target": "for a while",
+   "question": "About how long have you had the headache?",
+   "options": [
+    "A few hours",
+    "A few days",
+    "A few weeks or more"
+   ],
+   "facts": [
+    "頭痛がある",
+    "しばらくの間"
+   ]
+  },
+  "keyword_hits": [
+   "for a while",
+   "a while"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "keyword",
+  "ask": true,
+  "targets": [
+   "sometimes"
+  ],
+  "text": "My stomach hurts sometimes after I eat.",
+  "gemini": {
+   "sec": 2.7,
+   "status": "clarifying",
+   "target": "sometimes",
+   "question": "About how often does the pain happen after you eat?",
+   "options": [
+    "Almost every day or every meal",
+    "A few times a week",
+    "A few times a month or less"
+   ],
+   "facts": [
+    "胃（またはお腹）が痛む",
+    "時々",
+    "食後に"
+   ]
+  },
+  "keyword_hits": [
+   "sometimes"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "paraphrase",
+  "ask": true,
+  "targets": [
+   "on and off"
+  ],
+  "text": "My chest has been hurting on and off.",
+  "gemini": {
+   "sec": 4.5,
+   "status": "clarifying",
+   "target": "on and off",
+   "question": "How often does the pain come and go?",
+   "options": [
+    "Several times a day",
+    "A few times a week",
+    "Less than once a week"
+   ],
+   "facts": [
+    "胸が痛んでいる",
+    "痛んだり治まったりを繰り返している"
+   ]
+  },
+  "keyword_hits": [],
+  "gemini_ok": true,
+  "keyword_ok": false
+ },
+ {
+  "lang": "en",
+  "group": "paraphrase",
+  "ask": true,
+  "targets": [
+   "comes and goes"
+  ],
+  "text": "The pain in my back comes and goes.",
+  "gemini": {
+   "sec": 4.4,
+   "status": "confirmed",
+   "target": null,
+   "question": null,
+   "options": null,
+   "facts": [
+    "背中の痛み",
+    "痛んだり治まったりする"
+   ]
+  },
+  "keyword_hits": [],
+  "gemini_ok": false,
+  "keyword_ok": false
+ },
+ {
+  "lang": "en",
+  "group": "paraphrase",
+  "ask": true,
+  "targets": [
+   "ages",
+   "for ages"
+  ],
+  "text": "I've been coughing for ages.",
+  "gemini": {
+   "sec": 1.9,
+   "status": "clarifying",
+   "target": "for ages",
+   "question": "How long have you been coughing?",
+   "options": [
+    "A few weeks",
+    "A few months",
+    "More than a year"
+   ],
+   "facts": [
+    "咳が出ている",
+    "ずっと前から／長い間"
+   ]
+  },
+  "keyword_hits": [],
+  "gemini_ok": true,
+  "keyword_ok": false
+ },
+ {
+  "lang": "en",
+  "group": "paraphrase",
+  "ask": true,
+  "targets": [
+   "every now and then"
+  ],
+  "text": "Every now and then my hands go numb.",
+  "gemini": {
+   "sec": 3.5,
+   "status": "clarifying",
+   "target": "Every now and then",
+   "question": "About how often does this happen?",
+   "options": [
+    "A few times a day",
+    "A few times a week",
+    "A few times a month",
+    "Less than once a month"
+   ],
+   "facts": [
+    "時々",
+    "手がしびれる"
+   ]
+  },
+  "keyword_hits": [],
+  "gemini_ok": true,
+  "keyword_ok": false
+ },
+ {
+  "lang": "en",
+  "group": "meaning",
+  "ask": true,
+  "targets": [
+   "dizzy"
+  ],
+  "text": "I feel dizzy when I stand up.",
+  "gemini": {
+   "sec": 15.7,
+   "status": "clarifying",
+   "target": "dizzy",
+   "question": "What kind of dizzy do you feel?",
+   "options": [
+    "Lightheaded or faint",
+    "The room is spinning",
+    "Unsteady or off-balance"
+   ],
+   "facts": [
+    "立ち上がるときにめまいがします。"
+   ]
+  },
+  "keyword_hits": [
+   "dizzy"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "meaning",
+  "ask": true,
+  "targets": [
+   "light-headed",
+   "lightheaded"
+  ],
+  "text": "I get light-headed in the morning.",
+  "gemini": {
+   "sec": 9.9,
+   "status": "confirmed",
+   "target": null,
+   "question": null,
+   "options": null,
+   "facts": [
+    "立ちくらみ・ふらつき（light-headed）がする",
+    "朝に"
+   ]
+  },
+  "keyword_hits": [],
+  "gemini_ok": false,
+  "keyword_ok": false
+ },
+ {
+  "lang": "en",
+  "group": "context",
+  "ask": false,
+  "targets": [],
+  "text": "I waited at reception for a while. My throat has hurt since yesterday.",
+  "gemini": {
+   "sec": 2.4,
+   "status": "confirmed",
+   "target": null,
+   "question": null,
+   "options": null,
+   "facts": [
+    "受付でしばらく待ちました。",
+    "昨日から喉が痛いです。"
+   ]
+  },
+  "keyword_hits": [
+   "for a while",
+   "a while"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": false
+ },
+ {
+  "lang": "en",
+  "group": "context",
+  "ask": false,
+  "targets": [],
+  "text": "I recently moved to Japan. The rash started yesterday morning.",
+  "gemini": {
+   "sec": 7.7,
+   "status": "clarifying",
+   "target": "recently",
+   "question": "About when did you move to Japan?",
+   "options": [
+    "Within the last 2 weeks",
+    "About 1 to 3 months ago",
+    "More than 3 months ago"
+   ],
+   "facts": [
+    "最近日本に引っ越してきた",
+    "発疹が昨日の朝から始まった"
+   ]
+  },
+  "keyword_hits": [
+   "recently"
+  ],
+  "gemini_ok": false,
+  "keyword_ok": false
+ },
+ {
+  "lang": "en",
+  "group": "context",
+  "ask": false,
+  "targets": [],
+  "text": "Sometimes my daughter comes with me to translate.",
+  "gemini": {
+   "sec": 2.3,
+   "status": "confirmed",
+   "target": null,
+   "question": null,
+   "options": null,
+   "facts": [
+    "時々、娘が通訳のために同伴する"
+   ]
+  },
+  "keyword_hits": [
+   "sometimes"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": false
+ },
+ {
+  "lang": "en",
+  "group": "clear",
+  "ask": false,
+  "targets": [],
+  "text": "I had a fever of 38.5 two days ago, but it's gone now.",
+  "gemini": {
+   "sec": 4.5,
+   "status": "confirmed",
+   "target": null,
+   "question": null,
+   "options": null,
+   "facts": [
+    "2日前に38.5度の熱がありました",
+    "現在は解熱しています"
+   ]
+  },
+  "keyword_hits": [],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "clear",
+  "ask": false,
+  "targets": [],
+  "text": "I'm allergic to penicillin.",
+  "gemini": {
+   "sec": 15.5,
+   "status": "confirmed",
+   "target": null,
+   "question": null,
+   "options": null,
+   "facts": [
+    "ペニシリンに対するアレルギーがあります"
+   ]
+  },
+  "keyword_hits": [],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "clear",
+  "ask": false,
+  "targets": [],
+  "text": "I'm not sure when it started.",
+  "gemini": {
+   "sec": 2.6,
+   "status": "confirmed",
+   "target": null,
+   "question": null,
+   "options": null,
+   "facts": [
+    "いつ始まったかはっきり分からない。"
+   ]
+  },
+  "keyword_hits": [],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "zh-CN",
+  "group": "keyword",
+  "ask": true,
+  "targets": [
+   "好几天",
+   "几天"
+  ],
+  "text": "我头疼好几天了。",
+  "gemini": {
+   "sec": 3.9,
+   "status": "clarifying",
+   "target": "好几天",
+   "question": "请问大概持续了几天？",
+   "options": [
+    "2到3天左右",
+    "4到6天左右",
+    "1周左右或更久"
+   ],
+   "facts": [
+    "頭痛がする",
+    "数日前から続いている"
+   ]
+  },
+  "keyword_hits": [
+   "几天",
+   "好几天"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "zh-CN",
+  "group": "keyword",
+  "ask": true,
+  "targets": [
+   "有时候"
+  ],
+  "text": "我有时候吃完饭胃疼。",
+  "gemini": {
+   "sec": 3.7,
+   "status": "clarifying",
+   "target": "有时候",
+   "question": "您说的“有时候”，大概是怎样的频率？",
+   "options": [
+    "每周几次",
+    "每月几次或偶尔",
+    "每隔一段时间发作一次"
+   ],
+   "facts": [
+    "時々",
+    "食後に胃が痛む"
+   ]
+  },
+  "keyword_hits": [
+   "有时候",
+   "有时"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "zh-CN",
+  "group": "paraphrase",
+  "ask": true,
+  "targets": [
+   "断断续续"
+  ],
+  "text": "我胸口断断续续地疼。",
+  "gemini": {
+   "sec": 8.2,
+   "status": "confirmed",
+   "target": null,
+   "question": null,
+   "options": null,
+   "facts": [
+    "胸が断続的に痛む"
+   ]
+  },
+  "keyword_hits": [],
+  "gemini_ok": false,
+  "keyword_ok": false
+ },
+ {
+  "lang": "zh-CN",
+  "group": "paraphrase",
+  "ask": true,
+  "targets": [
+   "时不时"
+  ],
+  "text": "我时不时手发麻。",
+  "gemini": {
+   "sec": 2.8,
+   "status": "clarifying",
+   "target": "时不时",
+   "question": "大概多久发作一次？",
+   "options": [
+    "一天好几次",
+    "大概一天一次",
+    "一周几次",
+    "一个月几次或更少"
+   ],
+   "facts": [
+    "時々",
+    "手がしびれる"
+   ]
+  },
+  "keyword_hits": [],
+  "gemini_ok": true,
+  "keyword_ok": false
+ },
+ {
+  "lang": "zh-CN",
+  "group": "paraphrase",
+  "ask": true,
+  "targets": [
+   "前阵子",
+   "前阵子开始"
+  ],
+  "text": "前阵子开始一直咳嗽。",
+  "gemini": {
+   "sec": 4.2,
+   "status": "clarifying",
+   "target": "前阵子",
+   "question": "“前阵子”大概是多久以前？",
+   "options": [
+    "几天前",
+    "1到3周前",
+    "1个月以上"
+   ],
+   "facts": [
+    "少し前から始まった",
+    "ずっと咳が出ている"
+   ]
+  },
+  "keyword_hits": [],
+  "gemini_ok": true,
+  "keyword_ok": false
+ },
+ {
+  "lang": "zh-CN",
+  "group": "meaning",
+  "ask": true,
+  "targets": [
+   "头晕"
+  ],
+  "text": "我一站起来就头晕。",
+  "gemini": {
+   "sec": 3.5,
+   "status": "clarifying",
+   "target": "头晕",
+   "question": "请问您具体是哪种感觉？",
+   "options": [
+    "眼前发黑、发飘或快要晕倒",
+    "天旋地转（感觉自己在转或周围在转）",
+    "身体发飘、走路不稳"
+   ],
+   "facts": [
+    "立ち上がるとめまいがする"
+   ]
+  },
+  "keyword_hits": [
+   "头晕"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "zh-CN",
+  "group": "meaning",
+  "ask": true,
+  "targets": [
+   "心里难受",
+   "难受"
+  ],
+  "text": "我心里难受。",
+  "gemini": {
+   "sec": 4.1,
+   "status": "clarifying",
+   "target": "心里难受",
+   "question": "请问这里的“心里难受”具体是指哪种感觉？",
+   "options": [
+    "恶心、反胃或胃里不舒服",
+    "心慌、胸口闷或心脏不适",
+    "情绪低落、压抑或精神压力大"
+   ],
+   "facts": [
+    "胸（心）が苦しい・気持ち悪い（不快感がある）"
+   ]
+  },
+  "keyword_hits": [],
+  "gemini_ok": true,
+  "keyword_ok": false
+ },
+ {
+  "lang": "zh-CN",
+  "group": "context",
+  "ask": false,
+  "targets": [],
+  "text": "我在前台等了一段时间。从昨天开始喉咙疼。",
+  "gemini": {
+   "sec": 3.2,
+   "status": "confirmed",
+   "target": null,
+   "question": null,
+   "options": null,
+   "facts": [
+    "受付でしばらく待っていました",
+    "昨日から喉が痛いです"
+   ]
+  },
+  "keyword_hits": [
+   "一段时间"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": false
+ },
+ {
+  "lang": "zh-CN",
+  "group": "context",
+  "ask": false,
+  "targets": [],
+  "text": "我最近刚来日本。昨天早上开始起疹子。",
+  "gemini": {
+   "sec": 6.1,
+   "status": "clarifying",
+   "target": "最近",
+   "question": "您大概是什么时候来日本的？",
+   "options": [
+    "几天前",
+    "1到2周前",
+    "大约1个月前或更久"
+   ],
+   "facts": [
+    "最近日本に来たばかりです",
+    "昨日の朝から発疹が出始めました"
+   ]
+  },
+  "keyword_hits": [
+   "最近"
+  ],
+  "gemini_ok": false,
+  "keyword_ok": false
+ },
+ {
+  "lang": "zh-CN",
+  "group": "context",
+  "ask": false,
+  "targets": [],
+  "text": "有时候我女儿陪我来翻译。",
+  "gemini": {
+   "sec": 3.7,
+   "status": "confirmed",
+   "target": null,
+   "question": null,
+   "options": null,
+   "facts": [
+    "時々娘が通訳のために付き添って来ます"
+   ]
+  },
+  "keyword_hits": [
+   "有时候",
+   "有时"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": false
+ },
+ {
+  "lang": "zh-CN",
+  "group": "clear",
+  "ask": false,
+  "targets": [],
+  "text": "两天前发烧38.5度，现在退了。",
+  "gemini": {
+   "sec": 8.7,
+   "status": "confirmed",
+   "target": null,
+   "question": null,
+   "options": null,
+   "facts": [
+    "2日前に38.5度の発熱があった",
+    "現在は熱が下がった"
+   ]
+  },
+  "keyword_hits": [],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "zh-CN",
+  "group": "clear",
+  "ask": false,
+  "targets": [],
+  "text": "我对青霉素过敏。",
+  "gemini": {
+   "sec": 6.7,
+   "status": "confirmed",
+   "target": null,
+   "question": null,
+   "options": null,
+   "facts": [
+    "ペニシリンにアレルギーがある"
+   ]
+  },
+  "keyword_hits": [],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "zh-CN",
+  "group": "clear",
+  "ask": false,
+  "targets": [],
+  "text": "我没有发烧。",
+  "gemini": {
+   "sec": 3.2,
+   "status": "confirmed",
+   "target": null,
+   "question": null,
+   "options": null,
+   "facts": [
+    "発熱はありません"
+   ]
+  },
+  "keyword_hits": [],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "vi",
+  "group": "keyword",
+  "ask": true,
+  "targets": [
+   "một thời gian"
+  ],
+  "text": "Tôi bị đau đầu một thời gian rồi.",
+  "gemini": {
+   "sec": 4.0,
+   "status": "clarifying",
+   "target": "một thời gian",
+   "question": "Bạn bị đau đầu khoảng bao lâu rồi?",
+   "options": [
+    "Vài ngày gần đây",
+    "Khoảng 1 đến 3 tuần",
+    "Khoảng 1 tháng trở lên"
+   ],
+   "facts": [
+    "頭痛がします",
+    "しばらく前から"
+   ]
+  },
+  "keyword_hits": [
+   "một thời gian"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "vi",
+  "group": "keyword",
+  "ask": true,
+  "targets": [
+   "thỉnh thoảng"
+  ],
+  "text": "Thỉnh thoảng tôi bị đau bụng sau khi ăn.",
+  "gemini": {
+   "sec": 3.4,
+   "status": "clarifying",
+   "target": "Thỉnh thoảng",
+   "question": "\"Thỉnh thoảng\" có nghĩa là khoảng bao lâu một lần?",
+   "options": [
+    "Mỗi tuần vài lần",
+    "Mỗi tháng vài lần",
+    "Hiếm khi hơn (vài tháng một lần)"
+   ],
+   "facts": [
+    "時々腹痛があります",
+    "食後に"
+   ]
+  },
+  "keyword_hits": [
+   "thỉnh thoảng"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "vi",
+  "group": "paraphrase",
+  "ask": true,
+  "targets": [
+   "lúc có lúc không"
+  ],
+  "text": "Ngực tôi đau lúc có lúc không.",
+  "gemini": {
+   "sec": 5.3,
+   "status": "clarifying",
+   "target": "lúc có lúc không",
+   "question": "Cơn đau thường xuất hiện với mức độ thường xuyên như thế nào?",
+   "options": [
+    "Nhiều lần mỗi ngày",
+    "Khoảng 1 đến 2 lần một ngày",
+    "Cách vài ngày một lần hoặc ít hơn"
+   ],
+   "facts": [
+    "胸が痛みます",
+    "痛む時と痛まない時があります（波がある）"
+   ]
+  },
+  "keyword_hits": [],
+  "gemini_ok": true,
+  "keyword_ok": false
+ },
+ {
+  "lang": "vi",
+  "group": "paraphrase",
+  "ask": true,
+  "targets": [
+   "mấy bữa nay",
+   "mấy bữa"
+  ],
+  "text": "Mấy bữa nay tôi ho nhiều.",
+  "gemini": {
+   "sec": 4.5,
+   "status": "clarifying",
+   "target": "Mấy bữa nay",
+   "question": "\"Mấy bữa nay\" cụ thể là khoảng bao lâu rồi?",
+   "options": [
+    "Khoảng 1 đến 3 ngày",
+    "Khoảng 4 đến 7 ngày",
+    "Hơn 1 tuần"
+   ],
+   "facts": [
+    "ここ数日",
+    "咳が多く出ます"
+   ]
+  },
+  "keyword_hits": [],
+  "gemini_ok": true,
+  "keyword_ok": false
+ },
+ {
+  "lang": "vi",
+  "group": "paraphrase",
+  "ask": true,
+  "targets": [
+   "hay",
+   "hay bị"
+  ],
+  "text": "Tay tôi hay bị tê.",
+  "gemini": {
+   "sec": 4.3,
+   "status": "clarifying",
+   "target": "hay",
+   "question": "Bạn bị tê tay thường xuyên như thế nào?",
+   "options": [
+    "Nhiều lần mỗi ngày",
+    "Vài lần một tuần",
+    "Thỉnh thoảng (vài lần một tháng)"
+   ],
+   "facts": [
+    "手がしびれる",
+    "よく起こる"
+   ]
+  },
+  "keyword_hits": [],
+  "gemini_ok": true,
+  "keyword_ok": false
+ },
+ {
+  "lang": "vi",
+  "group": "meaning",
+  "ask": true,
+  "targets": [
+   "chóng mặt"
+  ],
+  "text": "Tôi bị chóng mặt khi đứng dậy.",
+  "gemini": {
+   "sec": 3.1,
+   "status": "clarifying",
+   "target": "chóng mặt",
+   "question": "Bạn cảm thấy chóng mặt như thế nào?",
+   "options": [
+    "Nhà cửa, đồ vật quay cuồng",
+    "Cảm giác choáng váng, tối sầm mắt như muốn ngất",
+    "Mất thăng bằng, đi đứng không vững"
+   ],
+   "facts": [
+    "めまいがします",
+    "立ち上がるときに"
+   ]
+  },
+  "keyword_hits": [
+   "chóng mặt"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "vi",
+  "group": "meaning",
+  "ask": true,
+  "targets": [
+   "khó chịu trong người",
+   "khó chịu"
+  ],
+  "text": "Tôi thấy khó chịu trong người.",
+  "gemini": {
+   "sec": 6.8,
+   "status": "confirmed",
+   "target": null,
+   "question": null,
+   "options": null,
+   "facts": [
+    "体の調子が悪いです（不快感があります）。"
+   ]
+  },
+  "keyword_hits": [],
+  "gemini_ok": false,
+  "keyword_ok": false
+ },
+ {
+  "lang": "vi",
+  "group": "context",
+  "ask": false,
+  "targets": [],
+  "text": "Tôi đã đợi ở quầy lễ tân một thời gian. Tôi bị đau họng từ hôm qua.",
+  "gemini": {
+   "sec": 10.3,
+   "status": "confirmed",
+   "target": null,
+   "question": null,
+   "options": null,
+   "facts": [
+    "受付でしばらく待っていました",
+    "昨日から喉が痛いです"
+   ]
+  },
+  "keyword_hits": [
+   "một thời gian"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": false
+ },
+ {
+  "lang": "vi",
+  "group": "context",
+  "ask": false,
+  "targets": [],
+  "text": "Gần đây tôi mới sang Nhật. Tôi bị nổi mẩn từ sáng hôm qua.",
+  "gemini": {
+   "sec": 15.4,
+   "status": "confirmed",
+   "target": null,
+   "question": null,
+   "options": null,
+   "facts": [
+    "最近日本に来たばかりです",
+    "発疹が出ています",
+    "昨日の朝からです"
+   ]
+  },
+  "keyword_hits": [
+   "gần đây"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": false
+ },
+ {
+  "lang": "vi",
+  "group": "context",
+  "ask": false,
+  "targets": [],
+  "text": "Thỉnh thoảng con gái tôi đi cùng để phiên dịch.",
+  "gemini": {
+   "sec": 5.0,
+   "status": "confirmed",
+   "target": null,
+   "question": null,
+   "options": null,
+   "facts": [
+    "時々娘が通訳のために同行します"
+   ]
+  },
+  "keyword_hits": [
+   "thỉnh thoảng"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": false
+ },
+ {
+  "lang": "vi",
+  "group": "clear",
+  "ask": false,
+  "targets": [],
+  "text": "Hai ngày trước tôi sốt 38,5 độ, bây giờ hết rồi.",
+  "gemini": {
+   "sec": 14.5,
+   "status": "confirmed",
+   "target": null,
+   "question": null,
+   "options": null,
+   "facts": [
+    "2日前に38.5度の熱がありました",
+    "今は治まっています"
+   ]
+  },
+  "keyword_hits": [],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "vi",
+  "group": "clear",
+  "ask": false,
+  "targets": [],
+  "text": "Tôi bị dị ứng với penicillin.",
+  "gemini": {
+   "sec": 13.1,
+   "status": "confirmed",
+   "target": null,
+   "question": null,
+   "options": null,
+   "facts": [
+    "ペニシリンに対するアレルギーがあります。"
+   ]
+  },
+  "keyword_hits": [],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "vi",
+  "group": "clear",
+  "ask": false,
+  "targets": [],
+  "text": "Tôi không bị sốt.",
+  "gemini": {
+   "sec": 12.7,
+   "status": "confirmed",
+   "target": null,
+   "question": null,
+   "options": null,
+   "facts": [
+    "熱はありません。"
+   ]
+  },
+  "keyword_hits": [],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "demo",
+  "ask": true,
+  "targets": [
+   "for a while"
+  ],
+  "text": "I've had a headache for a while.",
+  "gemini": {
+   "sec": 4.7,
+   "status": "clarifying",
+   "target": "for a while",
+   "question": "About how long have you had the headache?",
+   "options": [
+    "A few hours to today",
+    "A few days",
+    "A few weeks",
+    "Months or longer"
+   ],
+   "facts": [
+    "頭痛がある",
+    "しばらくの間"
+   ]
+  },
+  "keyword_hits": [
+   "for a while",
+   "a while"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "demo",
+  "ask": true,
+  "targets": [
+   "for a while"
+  ],
+  "text": "I've had a headache for a while.",
+  "gemini": {
+   "sec": 3.3,
+   "status": "clarifying",
+   "target": "for a while",
+   "question": "About how long have you had the headache?",
+   "options": [
+    "A few hours",
+    "A few days",
+    "A few weeks or months"
+   ],
+   "facts": [
+    "頭痛がある",
+    "しばらくの間"
+   ]
+  },
+  "keyword_hits": [
+   "for a while",
+   "a while"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "demo",
+  "ask": true,
+  "targets": [
+   "for a while"
+  ],
+  "text": "I've had a headache for a while.",
+  "gemini": {
+   "sec": 3.5,
+   "status": "clarifying",
+   "target": "for a while",
+   "question": "About how long have you had the headache?",
+   "options": [
+    "A few hours to today",
+    "A few days",
+    "A few weeks or months"
+   ],
+   "facts": [
+    "頭痛がある",
+    "しばらくの間"
+   ]
+  },
+  "keyword_hits": [
+   "for a while",
+   "a while"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "demo",
+  "ask": true,
+  "targets": [
+   "for a while"
+  ],
+  "text": "I've had a headache for a while.",
+  "gemini": {
+   "sec": 5.0,
+   "status": "clarifying",
+   "target": "for a while",
+   "question": "How long have you had the headache?",
+   "options": [
+    "A few hours",
+    "A few days",
+    "A few weeks",
+    "A month or more"
+   ],
+   "facts": [
+    "頭痛があります",
+    "しばらくの間"
+   ]
+  },
+  "keyword_hits": [
+   "for a while",
+   "a while"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "demo",
+  "ask": true,
+  "targets": [
+   "for a while"
+  ],
+  "text": "I've had a headache for a while.",
+  "gemini": {
+   "sec": 24.6,
+   "status": "clarifying",
+   "target": "for a while",
+   "question": "About how long have you had the headache?",
+   "options": [
+    "A few hours to a day",
+    "A few days to a week",
+    "A few weeks to months",
+    "Longer than a few months"
+   ],
+   "facts": [
+    "頭痛がある",
+    "しばらくの間"
+   ]
+  },
+  "keyword_hits": [
+   "for a while",
+   "a while"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "demo",
+  "ask": true,
+  "targets": [
+   "for a while"
+  ],
+  "text": "I've had a headache for a while.",
+  "gemini": {
+   "sec": 3.0,
+   "status": "clarifying",
+   "target": "for a while",
+   "question": "How long have you had the headache?",
+   "options": [
+    "A few hours",
+    "A few days",
+    "A few weeks",
+    "A month or longer"
+   ],
+   "facts": [
+    "頭痛がある",
+    "しばらくの間"
+   ]
+  },
+  "keyword_hits": [
+   "for a while",
+   "a while"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "demo",
+  "ask": true,
+  "targets": [
+   "for a while"
+  ],
+  "text": "I've had a headache for a while.",
+  "gemini": {
+   "sec": 3.1,
+   "status": "clarifying",
+   "target": "for a while",
+   "question": "How long have you had the headache?",
+   "options": [
+    "A few hours",
+    "A few days",
+    "A few weeks or longer"
+   ],
+   "facts": [
+    "頭痛があります",
+    "しばらくの間"
+   ]
+  },
+  "keyword_hits": [
+   "for a while",
+   "a while"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "demo",
+  "ask": true,
+  "targets": [
+   "for a while"
+  ],
+  "text": "I've had a headache for a while.",
+  "gemini": {
+   "sec": 3.0,
+   "status": "clarifying",
+   "target": "for a while",
+   "question": "How long have you had the headache?",
+   "options": [
+    "A few hours",
+    "A few days",
+    "A few weeks or months"
+   ],
+   "facts": [
+    "頭痛がある",
+    "しばらくの間"
+   ]
+  },
+  "keyword_hits": [
+   "for a while",
+   "a while"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "demo",
+  "ask": true,
+  "targets": [
+   "for a while"
+  ],
+  "text": "I've had a headache for a while.",
+  "gemini": {
+   "sec": 3.4,
+   "status": "clarifying",
+   "target": "for a while",
+   "question": "About how long have you had the headache?",
+   "options": [
+    "A few hours to a day",
+    "A few days to a week",
+    "A few weeks to a month",
+    "More than a month"
+   ],
+   "facts": [
+    "頭痛がある",
+    "しばらくの間"
+   ]
+  },
+  "keyword_hits": [
+   "for a while",
+   "a while"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "demo",
+  "ask": true,
+  "targets": [
+   "for a while"
+  ],
+  "text": "I've had a headache for a while.",
+  "gemini": {
+   "sec": 3.7,
+   "status": "clarifying",
+   "target": "for a while",
+   "question": "About how long have you had the headache?",
+   "options": [
+    "A few hours",
+    "A few days",
+    "A few weeks or more"
+   ],
+   "facts": [
+    "頭痛がある",
+    "しばらくの間前から"
+   ]
+  },
+  "keyword_hits": [
+   "for a while",
+   "a while"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "demo",
+  "ask": true,
+  "targets": [
+   "for a while"
+  ],
+  "text": "I've had a headache for a while.",
+  "gemini": {
+   "sec": 2.7,
+   "status": "clarifying",
+   "target": "for a while",
+   "question": "How long have you had the headache?",
+   "options": [
+    "A few hours",
+    "A few days",
+    "A few weeks",
+    "A few months or longer"
+   ],
+   "facts": [
+    "頭痛がする",
+    "しばらくの間"
+   ]
+  },
+  "keyword_hits": [
+   "for a while",
+   "a while"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "demo",
+  "ask": true,
+  "targets": [
+   "for a while"
+  ],
+  "text": "I've had a headache for a while.",
+  "gemini": {
+   "sec": 10.4,
+   "status": "clarifying",
+   "target": "for a while",
+   "question": "About how long have you had the headache?",
+   "options": [
+    "A few hours to today",
+    "A few days",
+    "A few weeks or more"
+   ],
+   "facts": [
+    "頭痛がある",
+    "しばらくの間"
+   ]
+  },
+  "keyword_hits": [
+   "for a while",
+   "a while"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "demo",
+  "ask": true,
+  "targets": [
+   "for a while"
+  ],
+  "text": "I've had a headache for a while.",
+  "gemini": {
+   "sec": 3.6,
+   "status": "clarifying",
+   "target": "for a while",
+   "question": "About how long have you had the headache?",
+   "options": [
+    "A few hours to a day",
+    "A few days",
+    "A few weeks",
+    "A month or longer"
+   ],
+   "facts": [
+    "頭痛がある",
+    "しばらくの間"
+   ]
+  },
+  "keyword_hits": [
+   "for a while",
+   "a while"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "demo",
+  "ask": true,
+  "targets": [
+   "for a while"
+  ],
+  "text": "I've had a headache for a while.",
+  "gemini": {
+   "sec": 2.8,
+   "status": "clarifying",
+   "target": "for a while",
+   "question": "About how long have you had the headache?",
+   "options": [
+    "A few hours",
+    "A few days",
+    "A few weeks",
+    "A few months or more"
+   ],
+   "facts": [
+    "頭痛があります",
+    "しばらくの間"
+   ]
+  },
+  "keyword_hits": [
+   "for a while",
+   "a while"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "demo",
+  "ask": true,
+  "targets": [
+   "for a while"
+  ],
+  "text": "I've had a headache for a while.",
+  "gemini": {
+   "sec": 6.5,
+   "status": "clarifying",
+   "target": "for a while",
+   "question": "About how long have you had the headache?",
+   "options": [
+    "A few hours",
+    "A few days",
+    "A few weeks or months"
+   ],
+   "facts": [
+    "頭痛がある",
+    "しばらくの間"
+   ]
+  },
+  "keyword_hits": [
+   "for a while",
+   "a while"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "demo",
+  "ask": true,
+  "targets": [
+   "for a while"
+  ],
+  "text": "I've had a headache for a while.",
+  "gemini": {
+   "sec": 2.3,
+   "status": "clarifying",
+   "target": "for a while",
+   "question": "How long have you had the headache?",
+   "options": [
+    "A few hours",
+    "A few days",
+    "A few weeks",
+    "A month or longer"
+   ],
+   "facts": [
+    "頭痛がある",
+    "しばらくの間"
+   ]
+  },
+  "keyword_hits": [
+   "for a while",
+   "a while"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "demo",
+  "ask": true,
+  "targets": [
+   "for a while"
+  ],
+  "text": "I've had a headache for a while.",
+  "gemini": {
+   "sec": 2.9,
+   "status": "clarifying",
+   "target": "for a while",
+   "question": "How long have you had the headache?",
+   "options": [
+    "A few hours",
+    "A few days",
+    "A few weeks",
+    "A few months or longer"
+   ],
+   "facts": [
+    "頭痛がある",
+    "しばらくの間"
+   ]
+  },
+  "keyword_hits": [
+   "for a while",
+   "a while"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "demo",
+  "ask": true,
+  "targets": [
+   "for a while"
+  ],
+  "text": "I've had a headache for a while.",
+  "gemini": {
+   "sec": 8.3,
+   "status": "clarifying",
+   "target": "for a while",
+   "question": "About how long have you had the headache?",
+   "options": [
+    "A few hours",
+    "A few days",
+    "A few weeks or longer"
+   ],
+   "facts": [
+    "頭痛がある",
+    "しばらくの間"
+   ]
+  },
+  "keyword_hits": [
+   "for a while",
+   "a while"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "demo",
+  "ask": true,
+  "targets": [
+   "for a while"
+  ],
+  "text": "I've had a headache for a while.",
+  "gemini": {
+   "sec": 2.4,
+   "status": "clarifying",
+   "target": "for a while",
+   "question": "About how long have you had the headache?",
+   "options": [
+    "A few hours to today",
+    "A few days",
+    "A few weeks",
+    "A month or longer"
+   ],
+   "facts": [
+    "頭痛がある",
+    "しばらくの間"
+   ]
+  },
+  "keyword_hits": [
+   "for a while",
+   "a while"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ },
+ {
+  "lang": "en",
+  "group": "demo",
+  "ask": true,
+  "targets": [
+   "for a while"
+  ],
+  "text": "I've had a headache for a while.",
+  "gemini": {
+   "sec": 5.5,
+   "status": "clarifying",
+   "target": "for a while",
+   "question": "About how long have you had the headache?",
+   "options": [
+    "A few hours",
+    "A few days",
+    "A few weeks or months"
+   ],
+   "facts": [
+    "頭痛がする",
+    "しばらくの間"
+   ]
+  },
+  "keyword_hits": [
+   "for a while",
+   "a while"
+  ],
+  "gemini_ok": true,
+  "keyword_ok": true
+ }
+]
