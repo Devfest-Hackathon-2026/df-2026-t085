@@ -4,7 +4,7 @@ import json
 import os
 import random
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 
 from google import genai
@@ -28,6 +28,10 @@ BACKOFF_BASE_SEC = 1.0
 # 入れてあるときは、元のモデルで 2 回弾かれた時点で予備に切り替える（待ち時間を伸ばさないため）
 FALLBACK_MODEL = os.environ.get("FALLBACK_MODEL", "")
 FALLBACK_AFTER = 2
+# 遅い回の対策（hedged request）。HEDGE_SEC 秒たっても返らなければ、同じ依頼をもう1本投げて早い方を使う。
+# 実測（eval/results.md）では中央値 約4秒に対し、まれに 16〜25 秒かかる回があった。遅い回は混雑による待ちや再試行なので、
+# 投げ直した方が先に返ることが多い。追加の費用は遅い回の分だけ。0 にすると使わない（Cloud Run の環境変数 HEDGE_SEC）
+HEDGE_SEC = float(os.environ.get("HEDGE_SEC", "5"))
 # 患者の待ち時間対策（docs/ai-pipeline.md「待ち時間を縮める」）
 #   split : 確認質問（clarify）と facts を別々の呼び出しにして並列に投げる。患者が待つのは出力の短い clarify だけ
 #   single: 従来どおり1回の呼び出しで facts と確認質問をまとめて作る（品質が落ちたらこちらに戻す）
@@ -83,7 +87,35 @@ def _status(e):
     return getattr(e, "code", None) or getattr(e, "status_code", None)
 
 
+# hedged request 用。main.py が clarify / facts / 翻訳を投げる _pool とは分ける
+# （_pool のスレッドの中からさらに _pool に投げると、混んだときにお互いを待って止まるため）
+_hedge_pool = ThreadPoolExecutor(max_workers=32)
+
+
 def _call(system_file, schema_file, payload, model=MODEL):
+    """Gemini を1回呼ぶ。HEDGE_SEC を過ぎても返らなければ、同じ依頼をもう1本投げて先に成功した方を返す。"""
+    if HEDGE_SEC <= 0:
+        return _call_once(system_file, schema_file, payload, model)
+    start = time.time()
+    args = (system_file, schema_file, payload, model)
+    first = _hedge_pool.submit(_call_once, *args)
+    done, _ = wait([first], timeout=HEDGE_SEC)
+    if done:
+        return first.result()
+    print(f"  [hedge] {HEDGE_SEC:.0f}秒たっても返らないので、同じ依頼をもう1本投げる")
+    pending, err = {first, _hedge_pool.submit(_call_once, *args)}, None
+    while pending:
+        done, pending = wait(pending, return_when=FIRST_COMPLETED)
+        for f in done:
+            if f.exception() is None:
+                out, _ = f.result()
+                out["_meta"] = {**out.get("_meta", {}), "hedged": True, "winner": "first" if f is first else "second"}
+                return out, time.time() - start
+            err = f.exception()
+    raise err
+
+
+def _call_once(system_file, schema_file, payload, model=MODEL):
     start = time.time()
     timeouts = busy = 0
     while True:

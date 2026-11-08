@@ -109,7 +109,7 @@ async function callApi(path, sid, mid) {
   const res = await fetch(API_URL + path, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ sessionId: sid, messageId: mid }),
+    body: JSON.stringify(mid ? { sessionId: sid, messageId: mid } : { sessionId: sid }),
   });
   if (res.ok || res.status === 409) return; // 409 は二重押し。無視してよい
   const body = await res.json().catch(() => ({}));
@@ -152,6 +152,12 @@ export const receive = (sid, mid) => updateDoc(msgRef(sid, mid), { status: "rece
 export function retry(sid, m) {
   const path = m.from === "patient" && !m.clarification?.answer ? "/analyze" : "/translate";
   return callApi(path, sid, m.id);
+}
+
+// 医師: 「診察を終える」。この問診の発言と session をサーバーが消す（医師だけ。消したら戻せない）。
+// 患者のスマホは session が読めなくなるので、終了の画面に変わる
+export async function endSession(sid) {
+  await callApi("/end", sid);
 }
 
 // 音声 → 文字（Firestore には書かない）。返った text を入力欄に入れ、本人が確認してから say() する

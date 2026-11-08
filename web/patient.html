@@ -26,6 +26,7 @@ const T = {
     retry: "Try again", ok: "OK", expired: "This QR code can't be used. Please ask the doctor for a new one.",
     noSession: "Please scan the QR code on the doctor's screen.", mic: "Speak", micStop: "Stop",
     writeHere: "Write your answer", micDenied: "The microphone is not allowed. Please type instead.",
+    listen: "Listen", ended: "The consultation has ended. Your conversation has been deleted.",
     memo: "My notes", memoSub: "What the doctor has received from you", memoEmpty: "Nothing sent yet.", close: "Close",
     kinds: { symptom: "Symptoms", onset: "Since when", frequency: "How often", severity: "How bad", medication: "Medicine", allergy: "Allergies", other: "Other" },
   },
@@ -38,6 +39,7 @@ const T = {
     retry: "再试一次", ok: "确定", expired: "这个二维码不能用了，请让医生重新出示。",
     noSession: "请扫描医生屏幕上的二维码。", mic: "说话", micStop: "结束",
     writeHere: "写下你的回答", micDenied: "没有麦克风权限，请直接输入。",
+    listen: "朗读", ended: "问诊已结束。对话内容已删除。",
     memo: "我的记录", memoSub: "医生已经收到的内容", memoEmpty: "还没有发送内容。", close: "关闭",
     kinds: { symptom: "症状", onset: "从什么时候开始", frequency: "频率", severity: "程度", medication: "药物", allergy: "过敏", other: "其他" },
   },
@@ -50,6 +52,7 @@ const T = {
     retry: "Thử lại", ok: "OK", expired: "Mã QR này không dùng được. Hãy nhờ bác sĩ tạo mã mới.",
     noSession: "Hãy quét mã QR trên màn hình của bác sĩ.", mic: "Nói", micStop: "Dừng",
     writeHere: "Viết câu trả lời", micDenied: "Micro chưa được cho phép. Hãy gõ chữ.",
+    listen: "Nghe", ended: "Buổi khám đã kết thúc. Cuộc trò chuyện đã được xóa.",
     memo: "Ghi chú của tôi", memoSub: "Những gì bác sĩ đã nhận từ bạn", memoEmpty: "Chưa gửi gì.", close: "Đóng",
     kinds: { symptom: "Triệu chứng", onset: "Từ khi nào", frequency: "Bao lâu một lần", severity: "Mức độ", medication: "Thuốc", allergy: "Dị ứng", other: "Khác" },
   },
@@ -58,7 +61,7 @@ const T = {
 const app = document.getElementById("app");
 const sid = new URLSearchParams(location.search).get("s");
 const S = {
-  lang: null, msgs: [], draft: "", mic: "idle", busy: null, freeText: false,
+  lang: null, msgs: [], draft: "", mic: "idle", busy: null, freeText: false, ended: false,
   dismissed: new Set(load("dismissed") ?? []),
 };
 let t = T.en;
@@ -88,6 +91,7 @@ function setLang(lang) {
 // 今の発言 = 自分の最新の発言のうち、まだ送っていない・「違う」と戻していないもの
 function view() {
   if (!sid) return { name: "nosession" };
+  if (S.ended) return { name: "ended" };
   if (!S.lang) return { name: "join" };
   const mine = S.msgs.filter((m) => m.from === "patient");
   const last = mine.at(-1);
@@ -108,7 +112,7 @@ function view() {
 }
 
 function keyOf(v) {
-  return JSON.stringify([memoItems().length, v.name, v.m?.id, v.m?.status, v.doctors?.map((d) => d.id).join(), v.lastSent?.id, v.lastSent?.status, S.mic, S.busy, S.freeText, S.lang]);
+  return JSON.stringify([canSpeak, memoItems().length, v.name, v.m?.id, v.m?.status, v.doctors?.map((d) => d.id).join(), v.lastSent?.id, v.lastSent?.status, S.mic, S.busy, S.freeText, S.lang]);
 }
 
 function render(force = false) {
@@ -125,6 +129,8 @@ const steps = (n) => h("div", { class: "p-steps", "aria-hidden": "true" },
 const top = (n) => h("div", { class: "p-top" }, n ? steps(n) : h("span"), h("span", { class: "dot", title: "connected" }));
 
 const screens = {
+  ended: () => h("section", { class: "p-screen" }, h("div", { class: "p-center" }, h("p", {}, t.ended))),
+
   nosession: () => h("section", { class: "p-screen" }, h("div", { class: "p-center" }, h("p", {}, T.en.noSession))),
 
   join: () => h("section", { class: "p-screen" },
@@ -147,7 +153,8 @@ const screens = {
         h("span", { class: "dot", title: "connected" })),
       h("div", { class: "p-body" },
         v.doctors.map((d, i) => h("div", { class: "p-doctor" + (i < v.doctors.length - 1 ? " old" : "") },
-          h("div", { class: "who" }, t.doctor),
+          h("div", { class: "who" }, t.doctor, canSpeak && h("button", { class: "btn-link p-listen",
+            "aria-label": t.listen, onclick: () => speak(d.translation?.text) }, "🔊 ", t.listen)),
           h("div", { class: "say" }, d.translation?.text ?? ""))),
         v.lastSent && h("div", { class: "p-status" }, "✓ ", v.lastSent.status === "received" ? t.read : t.sent)),
       h("div", { class: "p-spacer" }),
@@ -240,6 +247,25 @@ function paintMemo() {
 }
 function openMemo() { paintMemo(); sheet.showModal(); }
 
+// ── 医師の言葉を読み上げる（体調が悪い・文字を読むのがつらい人のため）──
+// 端末の音声合成（Web Speech API）を使う。サーバーにも外部にも送らない。端末に患者の言語の声が無ければボタンを出さない
+const VOICE_LANG = { en: "en-US", "zh-CN": "zh-CN", vi: "vi-VN" };
+let canSpeak = false;
+function checkVoices() {
+  const want = (VOICE_LANG[S.lang] ?? "en-US").toLowerCase();
+  const prefix = want.split("-")[0];
+  const ok = speechSynthesis.getVoices().some((v) => v.lang.toLowerCase().replace("_", "-").startsWith(prefix));
+  if (ok !== canSpeak) { canSpeak = ok; render(true); }
+}
+function speak(text) {
+  if (!text) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = VOICE_LANG[S.lang] ?? "en-US";
+  u.rate = 0.9;
+  speechSynthesis.speak(u);
+}
+
 // ── 操作 ──
 async function join(lang) {
   S.busy = "join"; render(true);
@@ -313,7 +339,20 @@ async function start(lang) {
     onChange: (s) => { S.mic = s; render(); },
     onError: fail,
   });
-  unsaid.watchMessages(sid, (msgs) => { S.msgs = msgs; render(); if (sheet.open) paintMemo(); }, fail);
+  if ("speechSynthesis" in window) {
+    checkVoices();
+    speechSynthesis.addEventListener?.("voiceschanged", checkVoices);
+  }
+  // 医師が「診察を終える」と session と発言が消え、読めなくなる（permission-denied）→ 終了の画面
+  const ended = (e) => {
+    if (e?.code !== "permission-denied") return fail(e);
+    S.ended = true;
+    mic?.close();
+    if (sheet.open) sheet.close();
+    render(true);
+  };
+  unsaid.watchSession(sid, (s) => { if (!s) ended({ code: "permission-denied" }); }, ended);
+  unsaid.watchMessages(sid, (msgs) => { S.msgs = msgs; render(); if (sheet.open) paintMemo(); }, ended);
   render(true);
 }
 

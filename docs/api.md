@@ -32,11 +32,14 @@ API のレスポンスを使わなくても、結果は同じメッセージに�
 | POST | `/analyze` | 患者の発言を作った直後 | 200。status は `clarifying` か `confirmed` |
 | POST | `/translate` | 患者: `clarification.answer` を書いた後 ／ 医師: 発言を作った直後 | 200。患者は `confirmed`、医師は `sent` |
 | POST | `/transcribe?sessionId=&speaker=patient\|doctor` | 音声入力のとき、発言を作る前（ボディは WAV） | 200。`{text, lang}`。Firestore には書かない。詳しくは docs/stt.md |
+| POST | `/end` | 医師が「診察を終える」とき（ボディは `{"sessionId"}` だけ） | 200。`{deleted}`。その session の発言と session を消す。医師（`members[0]`）以外は 403 |
 | GET | `/health` | 動作確認 | `{"ok": true}` |
 
 - ヘッダー: `Authorization: Bearer <Firebase の ID トークン>`（匿名ログインの `auth.currentUser.getIdToken()`）
 - ボディ: `{"sessionId": "...", "messageId": "..."}` だけ。本文や言語は API が Firestore から読み直す（端末の言うことをそのまま信じない）。
 - レスポンス: Firestore に書いた内容と同じ（デバッグ用。画面は onSnapshot を使えばよい）。
+- 上限: 1つの session で /analyze・/translate・/transcribe を合わせて `MAX_CALLS_PER_SESSION` 回（既定 200）。超えると 429。
+- サーバーは session と発言に `apiCalls`（呼んだ回数）と `expireAt`（Firestore の TTL で消える期限）を書き足す。画面は使わない。
 - 待ち時間: `/analyze` は確認質問だけを先に Firestore に書く（facts と先回りの翻訳は並列）。質問ありでも質問なしでも、画面に出るまで Gemini 1回分。
   HTTP のレスポンスは facts まで書き終えてから返るので、**質問の表示は onSnapshot で行う**（`await callApi()` の後に表示すると速くならない）。
 
