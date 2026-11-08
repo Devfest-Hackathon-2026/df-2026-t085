@@ -86,6 +86,8 @@ def _session(session_id: str, uid: str):
     session = s.to_dict()
     if uid not in session.get("members", []):
         raise HTTPException(403, "この session のメンバーではありません")
+    if not session.get("patientLang"):
+        raise HTTPException(409, "患者がまだ参加していません（QR から参加すると patientLang が決まります）")
     return s_ref, session
 
 

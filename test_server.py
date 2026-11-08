@@ -173,5 +173,13 @@ check("Speech-to-Text 失敗 → 502", tx("patient").status_code == 502)
 main.app.dependency_overrides[main.current_uid] = lambda: "stranger"
 check("メンバー以外は音声も 403", tx("patient").status_code == 403)
 
+# 医師が QR で作った直後（患者がまだ参加していない = patientLang が null）
+store["sessions/s2"] = {"patientLang": None, "doctorLang": "ja", "members": ["doctor"]}
+store["sessions/s2/messages/d1"] = {"from": "doctor", "original": "こんにちは。", "status": "analyzing"}
+main.app.dependency_overrides[main.current_uid] = lambda: "doctor"
+r = client.post("/translate", json={"sessionId": "s2", "messageId": "d1"})
+check("患者が参加する前（patientLang null）は 409", r.status_code == 409)
+check("患者が参加する前は何も書かない", store["sessions/s2/messages/d1"]["status"] == "analyzing")
+
 print(f"\n{fails} 件 FAIL" if fails else "\nすべて PASS")
 sys.exit(1 if fails else 0)

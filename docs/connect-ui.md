@@ -52,8 +52,9 @@ Chrome で http://localhost:8000/stt-test.html を開いて、ログイン → �
 
 `web/try.html` は `web/unsaid.js` だけで作った最小のページ。上と同じく `web` で `python -m http.server 8000` をしてから:
 
-1. 普通の Chrome で http://localhost:8000/try.html を開く → これが **患者**。言語を選んで「session を作る」。
-2. 画面に出る「医師の画面」の URL を、**シークレットウィンドウ**（別の人としてログインさせるため）で開く → これが **医師**。
+1. 普通の Chrome で http://localhost:8000/try.html?role=doctor を開く → これが **医師**。「診察をはじめる」で QR と URL が出る。
+2. その URL を **シークレットウィンドウ**（別の人としてログインさせるため）で開く → これが **患者**。言語を選んで「Join」。医師の画面は QR が消えて会話になる。
+   スマホで QR を読むには https が要る（2-1c）。
 3. 患者で英語を送る → 確認質問に答える → 送信 → 医師に日本語で出る → 医師が日本語で返す。
 
 ### 2-2. 画面から呼ぶ関数
@@ -68,9 +69,12 @@ import * as unsaid from "./unsaid.js";
 | 関数 | どの画面で | すること |
 |---|---|---|
 | `login()` | 両方、最初に | 匿名ログイン。再読み込みしても同じ人のまま |
-| `createSession(patientLang)` | 患者 | 言語（`en` / `zh-CN` / `vi`）を選んだら session を作り、id を返す。この id を QR か URL（`?s=<id>`）で医師に見せる |
-| `joinSession(sid)` | 医師 | QR / URL の id で参加。参加するまで session は読めない |
-| `watchSession(sid, cb)` | 両方 | `patientLang` などを読む（参加した後） |
+| `createSession()` | 医師 | 「診察をはじめる」で session を作り、id を返す。`patientLang` は患者が参加するまで `null` |
+| `joinUrl(sid, page)` / `qrSvg(url)` | 医師 | 患者がスマホで開く URL（`page` は患者の画面、既定 `try.html`）と、その QR の `<svg>` 文字列。`el.innerHTML = unsaid.qrSvg(unsaid.joinUrl(sid, "patient.html"))` |
+| `watchSession(sid, cb)` | 両方 | `patientLang` などを読む。医師は `patientLang` が入ったら QR を消して会話画面へ |
+| `PATIENT_LANGS` | 患者 | 選べる言語 `["en", "zh-CN", "vi"]` |
+| `mySession(sid)` | 両方 | 参加済みなら session、まだなら `null`。再読み込みで言語選択を飛ばすのに使う |
+| `joinSession(sid, patientLang)` | 患者 | QR の `?s=<id>` で参加し、同時に言語を決める（1回だけ）。参加できるのは **作ってから 30 分以内・2人目まで**。それ以外は `permission-denied` →「医師に新しい QR を」と出す |
 | `watchMessages(sid, cb)` | 両方 | 発言の一覧（古い順）。**画面の表示はすべてここから**。何か書き足されるたびに cb が呼ばれる |
 | `say(sid, from, text)` | 両方 | 発言する。`from` は `"patient"` / `"doctor"` |
 | `answer(sid, mid, type, text)` | 患者 | 確認質問に答える。`option`（選んだ文字）/ `free_text`（入力）/ `unsure`（`""`） |
@@ -141,6 +145,18 @@ firebase deploy --only hosting
 - [ ] 再読み込みしても同じ session の続きが見える（同じ uid のまま）
 - [ ] 待ち時間をメモ（送ってから確認質問が出るまで、目安 3〜5 秒。デモ日は `--min-instances 1`）
 
+### 2-1c. スマホで QR から参加する（Firebase Hosting）
+
+スマホは PC の `localhost` を開けず、マイクは https でしか動かないので、`web/` を Firebase Hosting に置く。
+PowerShell で、リポジトリのフォルダで（初回だけ `npm install -g firebase-tools` と `firebase login`）:
+
+```powershell
+firebase deploy --only hosting
+```
+
+`https://unsaid-devfest.web.app/try.html?role=doctor` を PC で開き、出た QR をスマホのカメラで読む。
+ルールを変えたときは `firebase deploy --only firestore:rules`（コンソールに貼るのと同じ）。
+
 ### つまずいたとき
 
 | 症状 | 原因と対処 |
@@ -151,4 +167,6 @@ firebase deploy --only hosting
 | `FirebaseError: Missing or insufficient permissions` | 参加していない session を読んでいる（医師は先に `joinSession`）か、決まっていない項目を書いている（2-3 の 5） |
 | 確認質問が出ず `analyzing` のまま | `say()` の API 呼び出しが失敗している。コンソールの `ApiError` を見る。401 ならログイン、502 ならメッセージが `error` になる |
 | CORS エラー | Cloud Run の `ALLOWED_ORIGINS` を設定した後なら、その URL を足す（docs/deploy.md） |
-| マイクが使えない | `localhost` か `https` で開いていない |
+| マイクが使えない | `localhost` か `https` で開いていない（スマホは 2-1c の web.app の URL で） |
+| 患者が Join で `permission-denied` | QR を作ってから 30 分過ぎた / もう患者が参加している。医師が「診察をはじめる」をやり直す |
+| 医師が送ると 409「患者がまだ参加していません」 | 患者が Join する前（`patientLang` が決まっていない）。QR を読んでもらってから |

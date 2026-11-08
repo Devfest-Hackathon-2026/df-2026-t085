@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>UNSAID 接続テスト</title>
-<!-- Yusei の画面ができる前に、web/unsaid.js だけで 患者 ⇔ 医師 の流れを通すための最小のページ（見た目は気にしない） -->
+<!-- Yusei の画面ができる前に、web/unsaid.js だけで 患者 ⇔ 医師 の流れを通すための最小のページ（見た目は気にしない）。
+     医師: try.html?role=doctor →「診察をはじめる」で QR。患者: スマホで QR を読む → 言語を選んで Join -->
 <style>
   body { font: 16px/1.5 system-ui, sans-serif; max-width: 640px; margin: 0 auto; padding: 16px; background: #fff; color: #111; }
   .msg { border: 1px solid #ccc; border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
@@ -12,7 +13,8 @@
   .muted { color: #666; font-size: 14px; }
   .note { color: #a40; }
   button { margin: 4px 4px 0 0; padding: 6px 12px; }
-  input { padding: 6px; width: 70%; }
+  input { padding: 6px; width: 70%; font-size: 16px; } /* 16px 未満だと iPhone が入力時に拡大する */
+  svg { width: 100%; height: auto; }
   mark { background: #ffe58a; }
 </style>
 </head>
@@ -36,33 +38,60 @@ $("title").textContent = role === "doctor" ? "医師（日本語）" : "患者";
 
 const fail = (err) => { console.error(err); $("info").textContent = "失敗: " + (err.message || err); };
 
+// 医師がはじめる → QR を出す → 患者がスマホで読む → 言語を選んで参加 → 会話
 async function start() {
-  await unsaid.login();
-  if (role === "doctor") await unsaid.joinSession(sid);
-  const doctorUrl = `${location.origin}${location.pathname}?role=doctor&s=${sid}`;
-  $("info").textContent = role === "patient" ? `session: ${sid}　医師の画面: ${doctorUrl}` : `session: ${sid}`;
+  $("setup").replaceChildren();
+  $("info").textContent = `session: ${sid}`;
   $("composer").hidden = false;
   unsaid.watchMessages(sid, render, fail);
 }
 
-if (role === "patient" && !sid) {
-  const sel = el("select");
-  for (const l of ["en", "zh-CN", "vi"]) sel.append(new Option(l, l));
-  const b = el("button", "session を作る");
-  b.onclick = async () => {
-    try {
-      sid = await unsaid.createSession(sel.value);
-      history.replaceState(null, "", `?role=patient&s=${sid}`);
-      $("setup").replaceChildren();
-      await start();
-    } catch (e) { fail(e); }
-  };
-  $("setup").append("患者の言語 ", sel, " ", b);
-} else if (!sid) {
-  $("info").textContent = "患者の画面に出る「医師の画面」の URL で開いてください";
-} else {
-  start().catch(fail);
+async function doctorShowQr() {
+  const url = unsaid.joinUrl(sid);
+  const qr = el("div"); qr.style.width = "240px"; qr.innerHTML = unsaid.qrSvg(url);
+  const link = el("a", url); link.href = url; link.target = "_blank";
+  $("setup").replaceChildren(el("p", "患者さんのスマホで読み取ってもらってください（30分以内・1人だけ参加できます）"), qr, link);
+  const stop = unsaid.watchSession(sid, (s) => {
+    if (!s?.patientLang) return;
+    stop();
+    $("title").textContent = `医師（日本語）⇔ 患者（${s.patientLang}）`;
+    start();
+  }, fail);
 }
+
+async function patientJoin() {
+  if (await unsaid.mySession(sid)) return start(); // 再読み込み: 参加済み
+  const sel = el("select");
+  for (const l of unsaid.PATIENT_LANGS) sel.append(new Option(l, l));
+  const b = el("button", "Join");
+  b.onclick = async () => {
+    try { await unsaid.joinSession(sid, sel.value); await start(); }
+    catch (e) { fail(e.code === "permission-denied" ? new Error("この QR は使えません（期限切れか参加済み）。医師に新しい QR をお願いしてください") : e); }
+  };
+  $("setup").replaceChildren("Language ", sel, " ", b);
+}
+
+(async () => {
+  await unsaid.login();
+  if (role === "doctor" && !sid) {
+    const b = el("button", "診察をはじめる（QR を出す）");
+    b.onclick = async () => {
+      try {
+        sid = await unsaid.createSession();
+        history.replaceState(null, "", `?role=doctor&s=${sid}`);
+        await doctorShowQr();
+      } catch (e) { fail(e); }
+    };
+    $("setup").append(b);
+  } else if (role === "doctor") {
+    const s = await unsaid.mySession(sid);
+    if (s?.patientLang) await start(); else await doctorShowQr();
+  } else if (!sid) {
+    $("info").textContent = "医師の画面に出る QR を読み取ってください（医師の画面: ?role=doctor）";
+  } else {
+    await patientJoin();
+  }
+})().catch(fail);
 
 $("say").onclick = async () => {
   const text = $("text").value.trim();
