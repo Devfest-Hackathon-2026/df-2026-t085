@@ -32,6 +32,13 @@ button:disabled { cursor: default; opacity: 0.55; }
 [hidden] { display: none !important; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
+/* Lucide アイコン（icons.js）。文字と並ぶものは文字の大きさに合わせる */
+.icon { width: 1.1em; height: 1.1em; flex-shrink: 0; vertical-align: -0.18em; }
+.btn-icon, .p-listen, .p-status, .badge-ok, .d-mine .st { display: inline-flex; align-items: center; gap: 6px; }
+.mic { color: #fff; }
+.check .icon { stroke-width: 2.5; }
+.neg { color: var(--danger); margin-right: 4px; }
+
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 5px; background: var(--ok-dot); flex-shrink: 0; }
 .dot.off { background: var(--line); }
 mark { background: var(--mark); color: var(--ink); border-radius: 4px; padding: 1px 5px; font-weight: 600; }
@@ -120,7 +127,7 @@ mark { background: var(--mark); color: var(--ink); border-radius: 4px; padding: 
 .p-sheet-sub { margin: -10px 0 0; font-size: 14px; color: var(--sub); }
 .p-memo-group .k { font-size: 13px; color: var(--sub); }
 .p-memo-group .v { font-size: 18px; font-weight: 600; margin-top: 4px; line-height: 1.4; }
-.p-memo-group .check { color: var(--ok); font-size: 15px; }
+.p-memo-group .check { color: var(--ok); font-size: 15px; margin-left: 6px; }
 
 /* ───────── 医師 PC ───────── */
 .d-app { height: 100dvh; display: flex; }
