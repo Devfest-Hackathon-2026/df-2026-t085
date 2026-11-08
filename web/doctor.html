@@ -28,7 +28,7 @@ const S = { session: null, msgs: [], mic: "idle", openOrig: new Set(), sending: 
 let mic;
 let watch; // 待ちのまま止まった発言を見つける（ui.js）
 
-const fail = (e) => { console.error(e); toast("失敗しました: " + (e?.message ?? e)); };
+const fail = (e) => { if (S.ending) return; console.error(e); toast("失敗しました: " + (e?.message ?? e)); };
 
 // ── 開始画面と QR ──
 function startScreen() {
@@ -120,7 +120,8 @@ function main(session) {
       h("h2", {}, "問診メモ"),
       memo,
       h("div", { class: "d-foot" },
-        h("small", {}, "診断はしません"),
+        h("button", { class: "btn-primary d-copy", onclick: copyMemo }, "カルテにコピー"),
+        h("small", {}, "診断はしません。診察を終えると、この問診の記録はすべて消えます"),
         h("button", { class: "btn-quiet", onclick: end }, "診察を終える")))));
 
   watch = stuckWatch(() => { if (S.msgs.some((m) => m.status === "analyzing")) refresh(); });
@@ -181,14 +182,41 @@ const memoKey = (t) => t.replace(/[。、．,.!！\s]/g, "")
   .replace(/(があります|がある|がします|がする|あります|ある|します|する|です|ます)$/, "");
 const LABEL = Object.fromEntries(KINDS);
 
+// 確認した語を含む項目は、本人が確かめた内容（日本語）で置き換える
+const memoItem = (f, m) => {
+  const confirmed = isConfirmed(f, m) && Boolean(m.translation?.clarified_answer);
+  return { text: confirmed ? m.translation.clarified_answer : f.doctor_gloss || f.text, confirmed,
+    negated: f.negated, uncertain: f.uncertain && !confirmed };
+};
+
+// 「カルテにコピー」: 問診メモをそのまま電子カルテに貼れる日本語の文章にする（記録は診察終了で消えるので、残す分はここで写す）
+function memoText() {
+  const { symptoms, others, count } = buildMemo(S.msgs, memoItem, memoKey);
+  if (!count) return "";
+  const mark = (it) => `${it.negated ? "（なし）" : ""}${it.uncertain ? "（あいまい）" : ""}${it.confirmed ? "（本人確認済み）" : ""}`;
+  const lang = LANG_NAME[S.session?.patientLang] ?? S.session?.patientLang ?? "";
+  const lines = [`【問診メモ（UNSAID・${lang}話者・${new Date().toLocaleDateString("ja-JP")}）】`];
+  if (symptoms.length) {
+    lines.push(`${LABEL.symptom}:`);
+    for (const sy of symptoms) {
+      lines.push(`・${sy.text}${mark(sy)}`);
+      for (const a of ATTRS) if (sy.attrs[a]) lines.push(`　${LABEL[a]}: ${sy.attrs[a].text}${mark(sy.attrs[a])}`);
+    }
+  }
+  for (const [k, label] of KINDS) if (others.has(k)) lines.push(`${label}: ${others.get(k).map((it) => it.text + mark(it)).join("、")}`);
+  lines.push("※機械翻訳による患者の申告の整理。診断ではありません。");
+  return lines.join("\n");
+}
+
+async function copyMemo() {
+  const text = memoText();
+  if (!text) { toast("まだ問診メモがありません"); return; }
+  try { await navigator.clipboard.writeText(text); toast("問診メモをコピーしました。カルテに貼り付けてください"); }
+  catch (e) { fail(e); }
+}
+
 function renderMemo() {
-  // 確認した語を含む項目は、本人が確かめた内容（日本語）で置き換える
-  const item = (f, m) => {
-    const confirmed = isConfirmed(f, m) && Boolean(m.translation?.clarified_answer);
-    return { text: confirmed ? m.translation.clarified_answer : f.doctor_gloss || f.text, confirmed,
-      negated: f.negated, uncertain: f.uncertain && !confirmed };
-  };
-  const { symptoms, others, count } = buildMemo(S.msgs, item, memoKey);
+  const { symptoms, others, count } = buildMemo(S.msgs, memoItem, memoKey);
   if (!count) return [h("div", { class: "empty" }, "患者が送ると、ここに整理されます")];
   const marks = (it) => [
     it.negated && h("span", { class: "tag" }, "否定"),
@@ -215,8 +243,11 @@ function refresh() {
   log.scrollTop = keep;
 }
 
-function end() {
-  if (!confirm("診察を終えて、次の患者さん用の画面に戻りますか？")) return;
+// 診察を終える: この問診の発言と session をサーバーで消してから、次の患者さん用の画面に戻る
+async function end() {
+  if (!confirm("診察を終えますか？\nこの問診の記録はすべて消えます（患者さんのスマホからも消えます）。\nカルテに残す内容は、先に「カルテにコピー」で写してください。")) return;
+  S.ending = true; // 消した直後に届く「読めない」エラーは出さない
+  try { await unsaid.endSession(sid); } catch (e) { S.ending = false; fail(e); return; }
   mic?.close();
   location.href = "doctor.html";
 }

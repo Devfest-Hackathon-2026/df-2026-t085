@@ -29,13 +29,23 @@ class FakeDoc:
         for k, v in data.items():
             if v is firestore.DELETE_FIELD:
                 doc.pop(k, None)
+            elif isinstance(v, firestore.Increment):
+                doc[k] = doc.get(k, 0) + v.value
             else:
                 doc[k] = "<ts>" if v is firestore.SERVER_TIMESTAMP else v
+
+
+    def delete(self):
+        self.store.pop(self.path, None)
 
 
 class FakeCol:
     def __init__(self, store, path):
         self.store, self.path = store, path
+
+    def list_documents(self):
+        ids = {k[len(self.path) + 1:] for k in self.store if k.startswith(self.path + "/")}
+        return [self.document(i) for i in ids if "/" not in i]
 
     def document(self, id):
         return FakeDoc(self.store, self.path + "/" + id)
@@ -215,6 +225,30 @@ r = client.post("/translate", json={"sessionId": "s2", "messageId": "d1"})
 check("患者が参加する前（patientLang null）は 409", r.status_code == 409)
 check("患者が参加する前は何も書かない", store["sessions/s2/messages/d1"]["status"] == "analyzing")
 
+# --- 記録を残さない（expireAt・診察終了で消す）・呼び出し回数の上限 ---
+main.app.dependency_overrides[main.current_uid] = lambda: "patient"
+check("API を呼ぶと session に消える期限が付く", store[S].get("expireAt") is not None)
+check("API を呼ぶと発言にも消える期限が付く", m("m1").get("expireAt") is not None)
+check("呼んだ回数を数える", store[S]["apiCalls"] > 0)
+store["sessions/s3"] = {"patientLang": "en", "doctorLang": "ja", "members": ["doctor", "patient"],
+                        "apiCalls": main.MAX_CALLS_PER_SESSION}
+store["sessions/s3/messages/x1"] = {"from": "patient", "original": "I feel dizzy.", "status": "analyzing"}
+n = len(calls)
+r = client.post("/analyze", json={"sessionId": "s3", "messageId": "x1"})
+check("上限を超えたら 429 で Gemini を呼ばない", r.status_code == 429 and len(calls) == n)
+check("上限を超えたら音声も 429", tx("patient", sid="s3").status_code == 429)
+store[S]["members"] = ["doctor", "patient"]  # members[0] が医師（firestore.rules と同じ）
+check("患者は診察を終えられない（403）", client.post("/end", json={"sessionId": "s1"}).status_code == 403)
+main.app.dependency_overrides[main.current_uid] = lambda: "stranger"
+check("メンバー以外は診察を終えられない（403）", client.post("/end", json={"sessionId": "s1"}).status_code == 403)
+main.app.dependency_overrides[main.current_uid] = lambda: "doctor"
+r = client.post("/end", json={"sessionId": "s1"})
+check("医師が診察を終えると発言と session が消える",
+      r.status_code == 200 and r.json()["deleted"] >= 8 and not any(k.startswith(S) for k in store))
+check("ほかの session は消えない", "sessions/s3/messages/x1" in store)
+check("患者が参加する前でも終えられる", client.post("/end", json={"sessionId": "s2"}).status_code == 200
+      and "sessions/s2" not in store)
+
 # --- 混雑（429）が続いたら予備のモデルに切り替える ---
 class Busy(Exception):
     code = 429
@@ -244,6 +278,34 @@ try:
     check("予備が無ければ再試行を使い切って失敗", False)
 except Busy:
     check("予備が無ければ再試行を使い切って失敗", len(fm.models) == unsaid_ai.RETRIES_429 + 1)
+
+# --- 遅い回は同じ依頼をもう1本投げて早い方を使う（hedged request）---
+import threading
+import time as _time
+
+
+class SlowFirst:
+    def __init__(self):
+        self.n, self.lock = 0, threading.Lock()
+
+    def generate_content(self, model, **kw):
+        with self.lock:
+            self.n += 1
+            i = self.n
+        if i == 1:
+            _time.sleep(1.0)
+        return type("Res", (), {"text": f'{{"call": {i}}}', "usage_metadata": None})()
+
+
+sf = SlowFirst()
+unsaid_ai._client_ = lambda: type("C", (), {"models": sf})()
+unsaid_ai.HEDGE_SEC = 0.1
+out, sec = unsaid_ai._call("prompts/translate_system.txt", "schemas/translate.json", {})
+check("遅い回はもう1本投げて早い方を使う", out["call"] == 2 and out["_meta"]["hedged"] and sec < 0.8)
+sf.n = 0
+unsaid_ai.HEDGE_SEC = 0
+out, _ = unsaid_ai._call("prompts/translate_system.txt", "schemas/translate.json", {})
+check("HEDGE_SEC=0 なら投げ直さない", out["call"] == 1 and sf.n == 1)
 
 print(f"\n{fails} 件 FAIL" if fails else "\nすべて PASS")
 sys.exit(1 if fails else 0)

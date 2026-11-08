@@ -37,8 +37,10 @@ gcloud projects add-iam-policy-binding unsaid-devfest --member "serviceAccount:u
 ## 3. デプロイ（コードを変えるたびにこれだけ）
 
 ```powershell
-gcloud run deploy unsaid-api --source . --region asia-northeast1 --service-account unsaid-api@unsaid-devfest.iam.gserviceaccount.com --allow-unauthenticated --memory 512Mi --timeout 120
+gcloud run deploy unsaid-api --source . --region asia-northeast1 --service-account unsaid-api@unsaid-devfest.iam.gserviceaccount.com --allow-unauthenticated --memory 512Mi --timeout 120 --max-instances 3
 ```
+
+- `--max-instances 3` は乱用されたときに台数（と Gemini の呼び出し）が際限なく増えないようにする上限。デモでも1台で足りる。
 
 - 初回は「Artifact Registry のリポジトリを作りますか？」と聞かれるので `Y`。
 - 3〜5 分で `Service URL: https://unsaid-api-xxxx.asia-northeast1.run.app` が出る。これを Yusei に渡す（`docs/api.md` の `API_URL`）。
@@ -60,6 +62,30 @@ gcloud run services logs read unsaid-api --region asia-northeast1 --limit 50
 1. [Firebase コンソール](https://console.firebase.google.com/) で `unsaid-devfest` を開く（無ければ「プロジェクトを追加」→ 既存の GCP プロジェクトを選ぶ）。
 2. Authentication → Sign-in method → **匿名** を有効にする。
 3. Firestore Database → ルール → `firestore.rules` の中身を貼り付けて「公開」。
+
+## 初回だけ: 問診の記録を自動で消す（TTL）
+
+API は session と発言に `expireAt`（最後に使ってから 24 時間後）を書く。Firestore の TTL ポリシーを付けると、
+医師が「診察を終える」を押し忘れた session も自動で消える（消えるのは期限から通常 24 時間以内）。
+session を消しても下の messages は消えないので、2つとも付ける。
+
+```powershell
+gcloud firestore fields ttls update expireAt --collection-group=sessions --enable-ttl --project unsaid-devfest
+gcloud firestore fields ttls update expireAt --collection-group=messages --enable-ttl --project unsaid-devfest
+```
+
+普段は医師の「診察を終える」で、その場で session と発言をすべて消す（`POST /end`）。
+
+## 調整できる環境変数
+
+| 変数 | 既定 | 中身 |
+|---|---|---|
+| `HEDGE_SEC` | `5` | Gemini がこの秒数で返らなければ同じ依頼をもう1本投げ、早い方を使う。`0` で使わない |
+| `MAX_CALLS_PER_SESSION` | `200` | 1つの問診で API を呼べる回数（/analyze・/translate・/transcribe の合計）。超えると 429 |
+| `TTL_HOURS` | `24` | `expireAt` を「最後に使ってから何時間後」にするか |
+| `FALLBACK_MODEL` | 空 | 混雑（429）が続いたときの予備のモデル（下の「デモの日だけ」） |
+| `ANALYZE_MODE` | `split` | `single` で確認質問と facts を1回の呼び出しに戻す |
+| `ALLOWED_ORIGINS` | `*` | API を呼べる画面の URL（カンマ区切り） |
 
 ## デモの日だけ: 起動待ちを無くす
 

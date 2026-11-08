@@ -7,6 +7,7 @@
   POST /analyze    患者の発言: analyzing → clarifying（確認質問あり）/ confirmed（質問なし、翻訳まで済む）
   POST /translate  患者が回答した後: clarifying → confirmed ／ 医師の発言: analyzing → sent
   POST /transcribe 音声 → 文字（Firestore には書かない。端末が確認してから発言を作る）
+  POST /end        医師が「診察を終える」: その session の発言と session 自体を消す
 
 詳しい契約は docs/api.md。
 """
@@ -38,6 +39,14 @@ MAX_CHARS = 1000  # 1発言の上限。長すぎる入力でトークンを使�
 LOCK_SEC = 60
 # 確認質問を作る呼び出しが失敗したとき、確認なしの翻訳で先に進める。医師画面の注意書きに出す（doctorLang は ja）
 NO_CHECK_NOTE = "自動の確認ができませんでした。あいまいな言葉がそのまま訳されている可能性があります。"
+# 問診の記録を残し続けないための期限。サーバーが書くたびに expireAt を「今から TTL_HOURS 後」にする。
+# Firestore の TTL ポリシー（sessions と messages の expireAt）で、閉じ忘れた session も自動で消える（docs/deploy.md）。
+# 普段は医師の「診察を終える」（/end）でその場で消す
+TTL_HOURS = int(os.environ.get("TTL_HOURS", "24"))
+# 1つの session で API を呼べる回数の上限（/analyze・/translate・/transcribe の合計）。
+# 医師も匿名ログインなので、誰でも session を作れる。1つの session でクレジットを使い切られないようにする。
+# 問診1回は発言 20〜30 回 × 約2回 ≒ 60 回の想定
+MAX_CALLS_PER_SESSION = int(os.environ.get("MAX_CALLS_PER_SESSION", "200"))
 # 開発中は "*"。本番は Firebase App Hosting の URL をカンマ区切りで渡す（Cloud Run の環境変数）
 ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
 
@@ -84,7 +93,11 @@ class MessageRef(BaseModel):
     messageId: str
 
 
-def _session(session_id: str, uid: str):
+def _expire_at():
+    return datetime.now(timezone.utc) + timedelta(hours=TTL_HOURS)
+
+
+def _member_session(session_id: str, uid: str):
     """セッションのメンバーか確認し、(セッションの参照, セッション) を返す。"""
     s_ref = db().collection("sessions").document(session_id)
     s = s_ref.get()
@@ -93,8 +106,18 @@ def _session(session_id: str, uid: str):
     session = s.to_dict()
     if uid not in session.get("members", []):
         raise HTTPException(403, "この session のメンバーではありません")
+    return s_ref, session
+
+
+def _session(session_id: str, uid: str):
+    """Gemini / Speech-to-Text を使う API の入口。メンバーか・患者が参加済みか・呼び出し回数の上限を確かめ、
+    呼んだ回数と消える期限（expireAt）を session に書く。"""
+    s_ref, session = _member_session(session_id, uid)
     if not session.get("patientLang"):
         raise HTTPException(409, "患者がまだ参加していません（QR から参加すると patientLang が決まります）")
+    if session.get("apiCalls", 0) >= MAX_CALLS_PER_SESSION:
+        raise HTTPException(429, "この問診で使える回数を超えました。新しい問診を始めてください")
+    s_ref.update({"apiCalls": firestore.Increment(1), "expireAt": _expire_at()})
     return s_ref, session
 
 
@@ -140,7 +163,7 @@ def _claim(m_ref, statuses):
         locked = msg.get("lockedUntil")
         if locked and locked > datetime.now(timezone.utc):
             raise HTTPException(409, "この発言は処理中です")
-        return {"lockedUntil": datetime.now(timezone.utc) + timedelta(seconds=LOCK_SEC)}
+        return {"lockedUntil": datetime.now(timezone.utc) + timedelta(seconds=LOCK_SEC), "expireAt": _expire_at()}
     return _transact(m_ref, check)
 
 
@@ -285,6 +308,29 @@ def translate(ref: MessageRef, uid: str = Depends(current_uid)):
     return {**update, "error": None}
 
 
+
+
+class SessionRef(BaseModel):
+    sessionId: str
+
+
+@app.post("/end")
+def end(ref: SessionRef, uid: str = Depends(current_uid)):
+    """医師が「診察を終える」: この問診の発言と session をすべて消す。消せるのは医師（members[0]）だけ。
+
+    問診の内容は医療情報なので、使い終わったら残さない。カルテに必要な分は、医師が先に「カルテにコピー」で写す。
+    閉じ忘れた session は Firestore の TTL（expireAt）が消す。ルールでは端末からの削除を禁止しているので、消すのはサーバーだけ。
+    """
+    s_ref, session = _member_session(ref.sessionId, uid)
+    if session["members"][0] != uid:
+        raise HTTPException(403, "診察を終えられるのは医師だけです")
+    n = 0
+    for m_ref in s_ref.collection("messages").list_documents():
+        m_ref.delete()
+        n += 1
+    s_ref.delete()
+    log.info("end session messages=%d", n)
+    return {"deleted": n}
 
 
 @app.post("/transcribe")
