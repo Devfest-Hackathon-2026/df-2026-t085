@@ -26,6 +26,8 @@ const T = {
     retry: "Try again", ok: "OK", expired: "This QR code can't be used. Please ask the doctor for a new one.",
     noSession: "Please scan the QR code on the doctor's screen.", mic: "Speak", micStop: "Stop",
     writeHere: "Write your answer",
+    memo: "My notes", memoSub: "What the doctor has received from you", memoEmpty: "Nothing sent yet.", close: "Close",
+    kinds: { symptom: "Symptoms", onset: "Since when", frequency: "How often", severity: "How bad", medication: "Medicine", allergy: "Allergies", other: "Other" },
   },
   "zh-CN": {
     name: "中文（简体）", hint: "点一下，告诉医生哪里不舒服", listening: "正在听… 再点一下结束",
@@ -36,6 +38,8 @@ const T = {
     retry: "再试一次", ok: "确定", expired: "这个二维码不能用了，请让医生重新出示。",
     noSession: "请扫描医生屏幕上的二维码。", mic: "说话", micStop: "结束",
     writeHere: "写下你的回答",
+    memo: "我的记录", memoSub: "医生已经收到的内容", memoEmpty: "还没有发送内容。", close: "关闭",
+    kinds: { symptom: "症状", onset: "从什么时候开始", frequency: "频率", severity: "程度", medication: "药物", allergy: "过敏", other: "其他" },
   },
   vi: {
     name: "Tiếng Việt", hint: "Chạm và nói cho bác sĩ biết bạn bị gì", listening: "Đang nghe… chạm để dừng",
@@ -46,6 +50,8 @@ const T = {
     retry: "Thử lại", ok: "OK", expired: "Mã QR này không dùng được. Hãy nhờ bác sĩ tạo mã mới.",
     noSession: "Hãy quét mã QR trên màn hình của bác sĩ.", mic: "Nói", micStop: "Dừng",
     writeHere: "Viết câu trả lời",
+    memo: "Ghi chú của tôi", memoSub: "Những gì bác sĩ đã nhận từ bạn", memoEmpty: "Chưa gửi gì.", close: "Đóng",
+    kinds: { symptom: "Triệu chứng", onset: "Từ khi nào", frequency: "Bao lâu một lần", severity: "Mức độ", medication: "Thuốc", allergy: "Dị ứng", other: "Khác" },
   },
 };
 
@@ -99,7 +105,7 @@ function view() {
 }
 
 function keyOf(v) {
-  return JSON.stringify([v.name, v.m?.id, v.m?.status, v.doctor?.id, v.lastSent?.id, v.lastSent?.status, S.mic, S.busy, S.freeText, S.lang]);
+  return JSON.stringify([memoItems().length, v.name, v.m?.id, v.m?.status, v.doctor?.id, v.lastSent?.id, v.lastSent?.status, S.mic, S.busy, S.freeText, S.lang]);
 }
 
 function render(force = false) {
@@ -131,8 +137,11 @@ const screens = {
     ta.value = S.draft;
     const nextBtn = h("button", { onclick: say, disabled: !S.draft.trim() || S.busy === "say" }, t.next);
     const rec = S.mic === "recording";
+    const n = memoItems().length;
     return h("section", { class: "p-screen" },
-      top(0),
+      h("div", { class: "p-top" },
+        n ? h("button", { class: "p-memo-btn", onclick: openMemo }, `${t.memo} (${n})`) : h("span"),
+        h("span", { class: "dot", title: "connected" })),
       h("div", { class: "p-body" },
         v.doctor && h("div", { class: "p-doctor" },
           h("div", { class: "who" }, t.doctor),
@@ -196,6 +205,48 @@ const screens = {
       h("button", { class: "btn-link", onclick: () => notRight(m) }, t.notRight))),
 };
 
+
+// ── 自分のメモ（医師に届いた内容を、自分の言語・自分の言い方で見返す）──
+// 医師画面の問診メモと同じ facts から作る。確かめた語は自分の答えに置き換える。診断の言葉は足さない
+const KINDS = ["symptom", "onset", "frequency", "severity", "medication", "allergy", "other"];
+const SINGLE = new Set(["onset", "frequency", "severity"]); // 言い直したら最新だけ
+const norm = (x) => x.toLowerCase().replace(/[\s.,!?。、，！？]/g, "");
+
+function memoGroups() {
+  const groups = new Map();
+  for (const m of S.msgs) {
+    if (m.from !== "patient" || !["sent", "received"].includes(m.status)) continue;
+    const c = m.clarification;
+    const a = c?.answer;
+    for (const f of m.facts ?? []) {
+      const confirmed = a && a.type !== "unsure" && a.text && c.target && f.text.includes(c.target);
+      const text = confirmed ? a.text : f.text;
+      const list = SINGLE.has(f.kind) ? [] : (groups.get(f.kind) ?? []).filter((x) => norm(x.text) !== norm(text));
+      list.push({ text, confirmed, negated: f.negated });
+      groups.set(f.kind, list);
+    }
+  }
+  return groups;
+}
+const memoItems = () => [...memoGroups().values()].flat();
+
+const sheet = h("dialog", { class: "p-sheet", onclick: (e) => { if (e.target === sheet) sheet.close(); } });
+document.body.append(sheet);
+function paintMemo() {
+  const groups = memoGroups();
+  sheet.replaceChildren(h("div", { class: "p-sheet-in" },
+    h("div", { class: "p-sheet-head" },
+      h("h2", {}, t.memo),
+      h("button", { class: "btn-link", onclick: () => sheet.close() }, t.close)),
+    h("p", { class: "p-sheet-sub" }, t.memoSub),
+    groups.size ? KINDS.filter((k) => groups.has(k)).map((k) => h("div", { class: "p-memo-group" },
+      h("div", { class: "k" }, t.kinds?.[k] ?? k),
+      groups.get(k).map((it) => h("div", { class: "v" }, it.negated ? `✕ ${it.text}` : it.text,
+        it.confirmed && h("span", { class: "check", "aria-hidden": "true" }, " ✓")))))
+      : h("p", { class: "p-sheet-sub" }, t.memoEmpty)));
+}
+function openMemo() { paintMemo(); sheet.showModal(); }
+
 // ── 操作 ──
 async function join(lang) {
   S.busy = "join"; render(true);
@@ -258,7 +309,7 @@ async function start(lang) {
     onChange: (s) => { S.mic = s; render(); },
     onError: fail,
   });
-  unsaid.watchMessages(sid, (msgs) => { S.msgs = msgs; render(); }, fail);
+  unsaid.watchMessages(sid, (msgs) => { S.msgs = msgs; render(); if (sheet.open) paintMemo(); }, fail);
   render(true);
 }
 

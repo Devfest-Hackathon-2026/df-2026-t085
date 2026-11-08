@@ -107,6 +107,17 @@ mark { background: var(--mark); color: var(--ink); border-radius: 4px; padding: 
 .p-free { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
 .p-langs { display: flex; flex-direction: column; gap: 12px; margin-top: 28px; }
 
+.p-memo-btn { min-height: 40px; padding: 0 14px; border-radius: 20px; border: 1px solid var(--line); background: var(--soft); font-size: 14px; font-weight: 600; color: var(--accent); }
+.p-sheet { margin: auto auto 0; width: 100%; max-width: 480px; max-height: 80dvh; border: none; border-radius: 20px 20px 0 0; padding: 0; background: var(--ground); color: var(--ink); }
+.p-sheet::backdrop { background: rgba(20, 25, 30, 0.4); }
+.p-sheet-in { padding: 20px 24px 32px; display: flex; flex-direction: column; gap: 18px; }
+.p-sheet-head { display: flex; justify-content: space-between; align-items: center; }
+.p-sheet-head h2 { margin: 0; font-size: 20px; }
+.p-sheet-sub { margin: -10px 0 0; font-size: 14px; color: var(--sub); }
+.p-memo-group .k { font-size: 13px; color: var(--sub); }
+.p-memo-group .v { font-size: 18px; font-weight: 600; margin-top: 4px; line-height: 1.4; }
+.p-memo-group .check { color: var(--ok); font-size: 15px; }
+
 /* ───────── 医師 PC ───────── */
 .d-app { height: 100dvh; display: flex; }
 .d-main { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; padding: 28px 40px; }
