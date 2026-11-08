@@ -85,7 +85,7 @@
 
 ## 4. 画面（UI 案B、11/8 決定）
 
-モック：https://claude.ai/artifact/WE4NWy1T5GhHfiCZfF6f7x （案B v2）。方針は **病院で使うので情報は最小限**。担当は Yusei。
+モック：https://claude.ai/artifact/WE4NWy1T5GhHfiCZfF6f7x （案B v2）。実装：`web/patient.html` / `web/doctor.html`（見た目 `web/app.css`、共通部品 `web/ui.js`）。方針は **病院で使うので情報は最小限**。担当は Yusei。
 
 ### 患者スマホ（1画面に1つのことだけ）
 
@@ -96,7 +96,7 @@
 
 ### 医師 PC
 
-- 患者の最新の発言（日本語訳）を大きく。`確認済み` の印＋1行（例：「しばらく」→約1週間）。
+- 患者の最新の発言（日本語訳）を大きく。`確認済み` の印＋1行（例：「しばらく」→約1週間。`translation.clarified_target` / `clarified_answer`）。
 - 原文はボタンで開く。`translation.note`（「患者は説明できなかった」等）があれば注意書き。
 - 右側に問診メモ（facts から、埋まった項目だけ）。患者が確認中なら「確認中…」の行。
 - 大きなマイクボタン（医師の音声入力をデモで使うかは **TBD**）。
@@ -142,7 +142,7 @@ Cloud Run: unsaid-api（FastAPI, asia-northeast1）
 | 何 | URL |
 |---|---|
 | API（Cloud Run） | https://unsaid-api-799163399675.asia-northeast1.run.app |
-| 画面（Firebase Hosting） | https://unsaid-devfest.web.app/try.html?role=doctor （今は試験用の画面） |
+| 画面（Firebase Hosting） | https://unsaid-devfest.web.app/doctor.html （医師 PC。患者は QR から `patient.html`）。試験用の `try.html` も残す |
 
 11/14 の Regional Day まで落とさない。
 

@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<title>UNSAID</title>
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+<!-- 患者のスマホ（UI 案B v2）。医師 PC の QR から ?s=<session id> で開く。
+     1画面に1つのことだけ: 話す → （曖昧なら）確認質問 → 医師にこう伝わる → 送信。状態はすべて watchMessages から決める -->
+<main id="app"></main>
+<script type="module">
+import * as unsaid from "./unsaid.js";
+import { h, MIC_SVG, STOP_SVG, highlight, toast, micController } from "./ui.js";
+
+// 患者の画面の文言（PATIENT_LANGS と同じ言語）。確認質問・選択肢はサーバーが患者の言語で作る
+const T = {
+  en: {
+    name: "English", hint: "Tap and tell the doctor what's wrong", listening: "Listening… tap to stop",
+    converting: "Turning your voice into text…", placeholder: "Or type here", next: "Next",
+    checking: "Checking…", translating: "Translating…", doctorReads: "The doctor will read",
+    send: "Send", notRight: "That's not right", doctor: "Doctor", sent: "Sent", read: "The doctor has read it",
+    heardNothing: "Couldn't hear you. Please try again or type.", error: "Something went wrong.",
+    retry: "Try again", ok: "OK", expired: "This QR code can't be used. Please ask the doctor for a new one.",
+    noSession: "Please scan the QR code on the doctor's screen.", mic: "Speak", micStop: "Stop",
+    writeHere: "Write your answer",
+  },
+  "zh-CN": {
+    name: "中文（简体）", hint: "点一下，告诉医生哪里不舒服", listening: "正在听… 再点一下结束",
+    converting: "正在把语音转成文字…", placeholder: "也可以在这里输入", next: "下一步",
+    checking: "正在确认…", translating: "正在翻译…", doctorReads: "医生会看到",
+    send: "发送", notRight: "不对", doctor: "医生", sent: "已发送", read: "医生已读",
+    heardNothing: "没有听清，请再说一次或直接输入。", error: "出了点问题。",
+    retry: "再试一次", ok: "确定", expired: "这个二维码不能用了，请让医生重新出示。",
+    noSession: "请扫描医生屏幕上的二维码。", mic: "说话", micStop: "结束",
+    writeHere: "写下你的回答",
+  },
+  vi: {
+    name: "Tiếng Việt", hint: "Chạm và nói cho bác sĩ biết bạn bị gì", listening: "Đang nghe… chạm để dừng",
+    converting: "Đang chuyển giọng nói thành chữ…", placeholder: "Hoặc gõ ở đây", next: "Tiếp",
+    checking: "Đang kiểm tra…", translating: "Đang dịch…", doctorReads: "Bác sĩ sẽ đọc",
+    send: "Gửi", notRight: "Không đúng", doctor: "Bác sĩ", sent: "Đã gửi", read: "Bác sĩ đã đọc",
+    heardNothing: "Không nghe rõ. Hãy nói lại hoặc gõ chữ.", error: "Đã có lỗi.",
+    retry: "Thử lại", ok: "OK", expired: "Mã QR này không dùng được. Hãy nhờ bác sĩ tạo mã mới.",
+    noSession: "Hãy quét mã QR trên màn hình của bác sĩ.", mic: "Nói", micStop: "Dừng",
+    writeHere: "Viết câu trả lời",
+  },
+};
+
+const app = document.getElementById("app");
+const sid = new URLSearchParams(location.search).get("s");
+const S = {
+  lang: null, msgs: [], draft: "", mic: "idle", busy: null, freeText: false,
+  dismissed: new Set(load("dismissed") ?? []),
+};
+let t = T.en;
+let mic;
+let lastKey = "";
+
+function load(k) { try { return JSON.parse(sessionStorage.getItem(`unsaid:${sid}:${k}`)); } catch { return null; } }
+function save(k, v) { try { sessionStorage.setItem(`unsaid:${sid}:${k}`, JSON.stringify(v)); } catch {} }
+
+const fail = (e) => {
+  console.error(e);
+  S.busy = null;
+  toast(e?.code === "permission-denied" ? t.expired : `${t.error} ${e?.message ?? ""}`);
+  render(true);
+};
+
+function setLang(lang) {
+  S.lang = lang;
+  t = T[lang] ?? T.en;
+  document.documentElement.lang = lang;
+}
+
+// ── どの画面を出すか ──
+// 今の発言 = 自分の最新の発言のうち、まだ送っていない・「違う」と戻していないもの
+function view() {
+  if (!sid) return { name: "nosession" };
+  if (!S.lang) return { name: "join" };
+  const mine = S.msgs.filter((m) => m.from === "patient");
+  const last = mine.at(-1);
+  const active = last && !["sent", "received"].includes(last.status) && !S.dismissed.has(last.id) ? last : null;
+  if (active) {
+    const c = active.clarification;
+    if (active.status === "error") return { name: "error", m: active };
+    if (active.status === "analyzing") return { name: "wait", m: active, text: t.checking, step: 1 };
+    if (active.status === "clarifying" && !c?.answer && S.busy !== active.id) return { name: "clarify", m: active };
+    if (active.status === "clarifying") return { name: "wait", m: active, text: t.translating, step: 2 };
+    if (active.status === "confirmed") return { name: "confirm", m: active };
+  }
+  const doctor = S.msgs.filter((m) => m.from === "doctor" && ["sent", "received"].includes(m.status)).at(-1);
+  const lastSent = last && ["sent", "received"].includes(last.status) ? last : null;
+  // 医師の最新の発言が自分の最新の発言より後なら、医師の発言を見せる
+  const showDoctor = doctor && (!lastSent || S.msgs.indexOf(doctor) > S.msgs.indexOf(lastSent)) ? doctor : null;
+  return { name: "speak", doctor: showDoctor, lastSent: showDoctor ? null : lastSent };
+}
+
+function keyOf(v) {
+  return JSON.stringify([v.name, v.m?.id, v.m?.status, v.doctor?.id, v.lastSent?.id, v.lastSent?.status, S.mic, S.busy, S.freeText, S.lang]);
+}
+
+function render(force = false) {
+  const v = view();
+  const key = keyOf(v);
+  if (!force && key === lastKey) return;
+  lastKey = key;
+  app.replaceChildren(screens[v.name](v));
+  app.querySelector("[autofocus]")?.focus();
+}
+
+const steps = (n) => h("div", { class: "p-steps", "aria-hidden": "true" },
+  [1, 2, 3].map((i) => h("span", { class: i <= n ? "on" : "" })));
+const top = (n) => h("div", { class: "p-top" }, n ? steps(n) : h("span"), h("span", { class: "dot", title: "connected" }));
+
+const screens = {
+  nosession: () => h("section", { class: "p-screen" }, h("div", { class: "p-center" }, h("p", {}, T.en.noSession))),
+
+  join: () => h("section", { class: "p-screen" },
+    top(0),
+    h("div", { class: "p-body" },
+      h("div", { class: "p-question", lang: "mul" }, "Language · 语言 · Ngôn ngữ"),
+      h("div", { class: "p-langs" }, unsaid.PATIENT_LANGS.map((l) =>
+        h("button", { class: "p-option", lang: l, disabled: S.busy === "join", onclick: () => join(l) }, T[l]?.name ?? l))))),
+
+  speak: (v) => {
+    const ta = h("textarea", { id: "draft", rows: 2, placeholder: t.placeholder, "aria-label": t.placeholder,
+      oninput: (e) => { S.draft = e.target.value; nextBtn.disabled = !S.draft.trim(); } });
+    ta.value = S.draft;
+    const nextBtn = h("button", { onclick: say, disabled: !S.draft.trim() || S.busy === "say" }, t.next);
+    const rec = S.mic === "recording";
+    return h("section", { class: "p-screen" },
+      top(0),
+      h("div", { class: "p-body" },
+        v.doctor && h("div", { class: "p-doctor" },
+          h("div", { class: "who" }, t.doctor),
+          h("div", { class: "say" }, v.doctor.translation?.text ?? "")),
+        v.lastSent && h("div", { class: "p-status" }, "✓ ", v.lastSent.status === "received" ? t.read : t.sent)),
+      h("div", { class: "p-spacer" }),
+      h("div", { class: "p-speak" },
+        h("button", { class: "mic" + (rec ? " recording" : ""), "aria-label": rec ? t.micStop : t.mic,
+          disabled: S.mic === "transcribing", onclick: () => mic.toggle(), html: rec ? STOP_SVG : MIC_SVG }),
+        h("div", { class: "hint", "aria-live": "polite" }, rec ? t.listening : S.mic === "transcribing" ? t.converting : t.hint),
+        h("div", { class: "p-input" }, ta, nextBtn)));
+  },
+
+  wait: (v) => h("section", { class: "p-screen" },
+    top(v.step),
+    h("div", { class: "p-body" }, h("div", { class: "p-said" }, highlight(v.m.original, v.m.clarification?.target))),
+    h("div", { class: "p-center", "aria-live": "polite" }, h("div", { class: "spinner" }), h("p", {}, v.text))),
+
+  clarify: ({ m }) => {
+    const c = m.clarification;
+    const fx = c.fixed_options ?? {};
+    const body = S.freeText
+      ? (() => {
+          const ta = h("textarea", { rows: 3, "aria-label": t.writeHere, placeholder: t.writeHere, autofocus: true,
+            oninput: (e) => (okBtn.disabled = !e.target.value.trim()) });
+          const okBtn = h("button", { class: "btn-primary", disabled: true,
+            onclick: () => answer(m, "free_text", ta.value.trim()) }, t.ok);
+          return h("div", { class: "p-free" }, ta, okBtn,
+            h("button", { class: "btn-link", onclick: () => { S.freeText = false; render(true); } }, "←"));
+        })()
+      : h("div", { class: "p-options" }, (c.options ?? []).map((o) =>
+          h("button", { class: "p-option", onclick: () => answer(m, "option", o) }, o)));
+    return h("section", { class: "p-screen" },
+      top(2),
+      h("div", { class: "p-body" },
+        h("div", { class: "p-said" }, highlight(m.original, c.target)),
+        h("h1", { class: "p-question" }, c.question),
+        body),
+      h("div", { class: "p-spacer" }),
+      !S.freeText && h("div", { class: "p-links" },
+        h("button", { class: "btn-link", onclick: () => answer(m, "unsure") }, fx.unsure ?? "?"),
+        h("button", { class: "btn-link", onclick: () => { S.freeText = true; render(true); } }, fx.free_text ?? "…")));
+  },
+
+  confirm: ({ m }) => h("section", { class: "p-screen" },
+    top(3),
+    h("div", { class: "p-body" },
+      h("div", { class: "p-label" }, t.doctorReads),
+      h("div", { class: "p-big" }, `“${m.translation?.back_translation ?? ""}”`)),
+    h("div", { class: "p-spacer" }),
+    h("div", { class: "p-actions" },
+      h("button", { class: "btn-primary", disabled: S.busy === m.id, onclick: () => send(m) }, t.send),
+      h("button", { class: "btn-link", onclick: () => notRight(m) }, t.notRight))),
+
+  error: ({ m }) => h("section", { class: "p-screen" },
+    top(0),
+    h("div", { class: "p-body" }, h("div", { class: "p-said" }, m.original)),
+    h("div", { class: "p-center" }, h("p", {}, t.error)),
+    h("div", { class: "p-actions" },
+      h("button", { class: "btn-primary", disabled: S.busy === m.id, onclick: () => retry(m) }, t.retry),
+      h("button", { class: "btn-link", onclick: () => notRight(m) }, t.notRight))),
+};
+
+// ── 操作 ──
+async function join(lang) {
+  S.busy = "join"; render(true);
+  try {
+    await unsaid.joinSession(sid, lang);
+    S.busy = null;
+    await start(lang);
+  } catch (e) { fail(e); }
+}
+
+async function say() {
+  const text = S.draft.trim();
+  if (!text) return;
+  S.busy = "say"; render(true);
+  try {
+    // 吹き出しは addDoc の時点で onSnapshot に出る。確認質問も onSnapshot の方が先に届く
+    const p = unsaid.say(sid, "patient", text);
+    S.draft = "";
+    await p;
+  } catch (e) { S.draft = text; fail(e); return; }
+  S.busy = null; render();
+}
+
+async function answer(m, type, text = "") {
+  S.busy = m.id; S.freeText = false; render(true); // 押したらすぐ「翻訳しています…」
+  try { await unsaid.answer(sid, m.id, type, text); } catch (e) { fail(e); return; }
+  S.busy = null; render();
+}
+
+async function send(m) {
+  S.busy = m.id; render(true);
+  try { await unsaid.send(sid, m.id); } catch (e) { fail(e); return; }
+  S.busy = null; render();
+}
+
+async function retry(m) {
+  S.busy = m.id; render(true);
+  try { await unsaid.retry(sid, m); } catch (e) { fail(e); return; }
+  S.busy = null; render();
+}
+
+// 「違う」: この発言は送らずに、話す画面へ戻す（文字は入力欄に戻して直せるようにする）
+function notRight(m) {
+  S.dismissed.add(m.id);
+  save("dismissed", [...S.dismissed]);
+  S.draft = m.original;
+  render(true);
+}
+
+async function start(lang) {
+  setLang(lang);
+  mic = micController({
+    Recorder: unsaid.Recorder,
+    transcribe: (wav) => unsaid.transcribe(sid, "patient", wav),
+    onText: (text) => {
+      if (!text) { toast(t.heardNothing); return; }
+      S.draft = S.draft ? `${S.draft} ${text}` : text;
+      render(true);
+    },
+    onChange: (s) => { S.mic = s; render(); },
+    onError: fail,
+  });
+  unsaid.watchMessages(sid, (msgs) => { S.msgs = msgs; render(); }, fail);
+  render(true);
+}
+
+(async () => {
+  if (!sid) return render(true);
+  await unsaid.login();
+  const s = await unsaid.mySession(sid); // 再読み込み: 参加済みならそのまま
+  if (s?.patientLang) await start(s.patientLang);
+  else render(true);
+})().catch(fail);
+</script>
+</body>
+</html>

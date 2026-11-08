@@ -33,5 +33,9 @@ A JSON object:
 - back_translation: translate your translation back into source_lang, literally, so the speaker can check
   what the other person will read.
 - note: a short note in target_lang only when required above, otherwise "".
+- clarified_target, clarified_answer: only for patient_to_doctor when answer_type is "option" or "free_text".
+  clarified_target is the vague target rendered in target_lang, as vague as it was (for example "しばらく").
+  clarified_answer is the meaning the patient confirmed, short, in target_lang (for example "約1週間").
+  The doctor sees them as "clarified_target → clarified_answer". Otherwise both are "".
 
 Return only JSON that follows the schema.

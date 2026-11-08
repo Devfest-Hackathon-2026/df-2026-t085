@@ -3,7 +3,9 @@
   "properties": {
     "translation": { "type": "string" },
     "back_translation": { "type": "string" },
-    "note": { "type": "string" }
+    "note": { "type": "string" },
+    "clarified_target": { "type": "string" },
+    "clarified_answer": { "type": "string" }
   },
-  "required": ["translation", "back_translation", "note"]
+  "required": ["translation", "back_translation", "note", "clarified_target", "clarified_answer"]
 }
