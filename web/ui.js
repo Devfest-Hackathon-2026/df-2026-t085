@@ -24,6 +24,36 @@ export function highlight(original, target) {
   return [original.slice(0, i), h("mark", {}, target), original.slice(i + target.length)];
 }
 
+// ── 待ちのまま止まった発言を見つける ──
+// 通信が切れる・サーバーが途中で落ちると status が analyzing（や回答済みの clarifying）のまま変わらず、
+// 画面が回り続けてしまう。同じ発言・同じ待ち状態を最初に見た時刻を覚え、STUCK_MS を過ぎるか、
+// API の呼び出しが失敗したと分かったら（fail）「もう一度」を出す。onTick は数秒ごとに呼ぶ（画面を描き直す）
+export const STUCK_MS = 25000;
+export function stuckWatch(onTick, everyMs = 3000) {
+  const since = new Map();
+  const failed = new Set();
+  const waitingAs = (m) => (m.status === "analyzing" ? "analyzing"
+    : m.status === "clarifying" && m.clarification?.answer ? "answered" : null);
+  setInterval(onTick, everyMs);
+  return {
+    isStuck(m) {
+      const w = waitingAs(m);
+      if (!w) return false;
+      if (failed.has(m.id)) return true;
+      const k = `${m.id}:${w}`;
+      if (!since.has(k)) since.set(k, Date.now());
+      return Date.now() - since.get(k) > STUCK_MS;
+    },
+    fail(id) { failed.add(id); },
+    // 「もう一度」を押したとき: もう一度 STUCK_MS 待つ
+    reset(m) {
+      failed.delete(m.id);
+      const w = waitingAs(m);
+      if (w) since.set(`${m.id}:${w}`, Date.now());
+    },
+  };
+}
+
 let toastTimer;
 export function toast(text, ms = 4000) {
   let t = document.querySelector(".toast");

@@ -45,9 +45,11 @@ API のレスポンスを使わなくても、結果は同じメッセージに�
 | 401 | ID トークンが無い・無効 | ログインし直す |
 | 403 | その session のメンバーでない | |
 | 404 | session / message が無い | |
-| 409 | もう処理済み（二重押し）／回答前に /translate を呼んだ | 無視してよい |
+| 409 | もう処理済み（二重押し）／同じ発言を処理中（`lockedUntil`）／回答前に /translate を呼んだ | 無視してよい |
 | 400 | from が違う、本文が空か 1000 文字超、answer.type が不正 | |
 | 502 | Gemini が再試行しても失敗。メッセージの status は `error` になる | 「もう一度」ボタン → 下のコード例の `retry()` |
+
+通信が切れて API に届かなかった・サーバーが途中で落ちたときは、status が `analyzing`（や回答済みの `clarifying`）のまま変わらない。画面は 25 秒進まなければ「もう一度」を出す（`web/ui.js` の `stuckWatch`）。`/analyze` で確認質問の呼び出しだけが失敗したときは、確認なしの翻訳で `confirmed` まで進め、医師に見せる `translation.note` に「自動の確認ができませんでした」と書く。
 
 ## メッセージのフィールド（sessions/{sessionId}/messages/{messageId}）
 
@@ -56,11 +58,12 @@ API のレスポンスを使わなくても、結果は同じメッセージに�
 | `from` | 端末（作成時） | `"patient"` / `"doctor"` |
 | `original` | 端末（作成時） | 話した内容（1〜1000 文字） |
 | `status` | 下の表 | `analyzing` → `clarifying` → `confirmed` → `sent` → `received`、失敗時 `error` |
-| `createdAt` | 端末（作成時） | `serverTimestamp()` |
+| `createdAt` | 端末（作成時） | `serverTimestamp()`（ルールでサーバーの時刻以外は弾く） |
 | `facts` | API | `[{text, doctor_gloss, kind, negated, uncertain, time?}]`。医師画面の補助表示。`status` が `clarifying` / `confirmed` になった直後はまだ無いことがある（1〜数秒後に届く。失敗したら `[]`） |
 | `clarification` | API（`answer` だけ患者の端末） | `null` か `{target, question, ui_type, options[], fixed_options{unsure, free_text}, answer}` |
 | `translation` | API | `null` か `{lang, text, back_translation, note, clarified_target, clarified_answer}`（`clarified_*` は確認に答えた患者の発言だけ。医師の言語で「しばらく」→「約1週間」。それ以外は `""`） |
 | `error` | API | 失敗したときだけ。例外名 |
+| `lockedUntil` | API | 処理中だけ。同じ発言を2つのリクエストが同時に処理しないための印（60 秒で切れる） |
 | `sentAt` / `receivedAt` | 患者の端末 / 医師の端末（医師の発言の `sentAt` は API） | `serverTimestamp()` |
 
 `clarification` の使い方:
@@ -133,6 +136,7 @@ function retry(sessionId, m) {
 ```
 
 `session` は `{patientLang, doctorLang, members: [uid, ...], createdAt}`。`patientLang` は `unsaid_ai.py` の `LANGS` にある言語（`en` / `zh-CN` / `vi`）。医師が QR で作った直後は `null` で、患者が参加するときに1回だけ書く（それまで API は 409）。`doctorLang` は `ja`。
+`members[0]` が医師（作った人）、`members[1]` が患者（QR で参加した人）。`from: "doctor"` の発言は医師だけ、`from: "patient"` の発言・回答・送信は患者だけ、既読は医師だけが書ける（`firestore.rules`）。
 Firestore のルール案は `firestore.rules`（端末が書けるのは上の表の「端末」の項目だけ）。
 
 ## 構成の選び方（Own the Why）

@@ -23,6 +23,11 @@ RETRIES = 1
 # 少しずつ間隔を空けて（1→2→4秒＋揺らぎ）最大 RETRIES_429 回まで再試行する。5xx も同じ扱い
 RETRIES_429 = 4
 BACKOFF_BASE_SEC = 1.0
+# 混雑（429 / 5xx）が続いたときに切り替える予備のモデル。空なら切り替えない。
+# デモ当日は他のチームも Gemini を叩くので、Cloud Run の環境変数で入れておく: --update-env-vars FALLBACK_MODEL=<モデル名>
+# 入れてあるときは、元のモデルで 2 回弾かれた時点で予備に切り替える（待ち時間を伸ばさないため）
+FALLBACK_MODEL = os.environ.get("FALLBACK_MODEL", "")
+FALLBACK_AFTER = 2
 # 患者の待ち時間対策（docs/ai-pipeline.md「待ち時間を縮める」）
 #   split : 確認質問（clarify）と facts を別々の呼び出しにして並列に投げる。患者が待つのは出力の短い clarify だけ
 #   single: 従来どおり1回の呼び出しで facts と確認質問をまとめて作る（品質が落ちたらこちらに戻す）
@@ -108,6 +113,10 @@ def _call(system_file, schema_file, payload, model=MODEL):
             code = _status(e)
             if code == 429 or (isinstance(code, int) and code >= 500):
                 busy += 1
+                if FALLBACK_MODEL and model != FALLBACK_MODEL and busy >= FALLBACK_AFTER:
+                    print(f"  [fallback] {model} が混雑（{code}）→ {FALLBACK_MODEL} に切り替え")
+                    model, busy = FALLBACK_MODEL, 0
+                    continue
                 if busy > RETRIES_429:
                     raise
                 wait = BACKOFF_BASE_SEC * 2 ** (busy - 1) + random.uniform(0, 0.5)

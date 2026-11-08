@@ -15,6 +15,7 @@ import os
 import threading
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 
 import firebase_admin
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
@@ -31,6 +32,12 @@ logging.basicConfig(level=logging.INFO)
 
 MAX_AUDIO_BYTES = 2_000_000  # 16kHz モノラル WAV で約 60 秒分。Speech-to-Text の同期認識の上限に合わせる
 MAX_CHARS = 1000  # 1発言の上限。長すぎる入力でトークンを使い切らないように
+# 1つの発言を処理している間の「処理中」の印の有効期限。Gemini の再試行をすべて使い切っても収まる長さ。
+# 画面は 25 秒待っても進まないと「もう一度」を出す（web/ui.js の STUCK_MS）。押されたときにまだ処理中なら 409 で何もしない。
+# サーバーが途中で落ちて印が残っても、この時間が過ぎれば「もう一度」でやり直せる
+LOCK_SEC = 60
+# 確認質問を作る呼び出しが失敗したとき、確認なしの翻訳で先に進める。医師画面の注意書きに出す（doctorLang は ja）
+NO_CHECK_NOTE = "自動の確認ができませんでした。あいまいな言葉がそのまま訳されている可能性があります。"
 # 開発中は "*"。本番は Firebase App Hosting の URL をカンマ区切りで渡す（Cloud Run の環境変数）
 ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
 
@@ -107,8 +114,34 @@ def _load(ref: MessageRef, uid: str):
 def _fail(m_ref, e):
     """Gemini が再試行しても失敗したとき。status を error にして画面で「もう一度」を出せるようにする。"""
     log.exception("gemini call failed")
-    m_ref.update({"status": "error", "error": type(e).__name__})
+    m_ref.update({"status": "error", "error": type(e).__name__, "lockedUntil": firestore.DELETE_FIELD})
     raise HTTPException(502, "AI の呼び出しに失敗しました。もう一度お試しください")
+
+
+def _transact(m_ref, check):
+    """メッセージを読み、check(msg) が返した変更を同じトランザクションで書く。check が例外を出したら何も書かない。"""
+    @firestore.transactional
+    def run(tx):
+        msg = m_ref.get(transaction=tx).to_dict()
+        tx.update(m_ref, check(msg))
+        return msg
+    return run(db().transaction())
+
+
+def _claim(m_ref, statuses):
+    """同じ発言を2つのリクエストが同時に処理しないように「処理中」の印（lockedUntil）を付ける。
+
+    画面の「もう一度」や二重押しで同じ発言が2回届くと、Gemini を2回呼んで、
+    患者が答えている最中に確認質問が別のものに書き換わることがある。それを防ぐ。
+    """
+    def check(msg):
+        if msg.get("status") not in statuses:
+            raise HTTPException(409, f"status が {msg.get('status')} なので処理済みです")
+        locked = msg.get("lockedUntil")
+        if locked and locked > datetime.now(timezone.utc):
+            raise HTTPException(409, "この発言は処理中です")
+        return {"lockedUntil": datetime.now(timezone.utc) + timedelta(seconds=LOCK_SEC)}
+    return _transact(m_ref, check)
 
 
 def _translation(out, lang):
@@ -149,8 +182,7 @@ def analyze(ref: MessageRef, uid: str = Depends(current_uid)):
     session, m_ref, msg = _load(ref, uid)
     if msg.get("from") != "patient":
         raise HTTPException(400, "analyze は患者の発言だけです（医師の発言は /translate）")
-    if msg.get("status") not in ("analyzing", "error"):
-        raise HTTPException(409, f"status が {msg.get('status')} なので解析済みです")
+    msg = _claim(m_ref, ("analyzing", "error"))
 
     args = (msg["original"], session["patientLang"], session["doctorLang"])
     f_tr = unsaid_ai.submit(_patient_translate, session, msg)
@@ -162,10 +194,14 @@ def analyze(ref: MessageRef, uid: str = Depends(current_uid)):
     if msg.get("status") == "error":  # 「もう一度」のときだけ。普段は書き込み1回分の往復を省く
         m_ref.update({"status": "analyzing", "error": firestore.DELETE_FIELD})
 
-    # 1) 確認質問（患者が待っているもの）
+    # 1) 確認質問（患者が待っているもの）。作れなかったら確認なしの翻訳で先に進める（発言を止めない）
     try:
         out, _ = f_clar.result()
-        if out["clarifications"]:
+    except Exception:
+        log.exception("clarify failed; continuing without clarification")
+        out = None
+    try:
+        if out and out["clarifications"]:
             c = out["clarifications"][0]
             update = {
                 "clarification": {
@@ -180,10 +216,13 @@ def analyze(ref: MessageRef, uid: str = Depends(current_uid)):
                 "status": "clarifying",
             }
         else:
-            update = {"clarification": None, "translation": f_tr.result(), "status": "confirmed"}
+            tr = f_tr.result()
+            if out is None:
+                tr["note"] = f"{tr['note']} {NO_CHECK_NOTE}".strip()
+            update = {"clarification": None, "translation": tr, "status": "confirmed"}
     except Exception as e:
         _fail(m_ref, e)
-    m_ref.update(update)
+    m_ref.update({**update, "lockedUntil": firestore.DELETE_FIELD})
     question_sec = time.time() - t0
 
     # 2) facts（医師画面の補助）。失敗しても発言は止めない
@@ -208,6 +247,7 @@ def translate(ref: MessageRef, uid: str = Depends(current_uid)):
     if msg.get("from") == "doctor":
         if status not in ("analyzing", "error"):
             raise HTTPException(409, f"status が {status} なので翻訳済みです")
+        _claim(m_ref, ("analyzing", "error"))
         try:
             out, sec = unsaid_ai.translate(
                 msg["original"], session["doctorLang"], session["patientLang"], "doctor_to_patient"
@@ -221,7 +261,7 @@ def translate(ref: MessageRef, uid: str = Depends(current_uid)):
             "sentAt": firestore.SERVER_TIMESTAMP,
             "error": firestore.DELETE_FIELD,
         }
-        m_ref.update(update)
+        m_ref.update({**update, "lockedUntil": firestore.DELETE_FIELD})
         return {**update, "sentAt": None, "error": None}
 
     c = msg.get("clarification") or {}
@@ -230,6 +270,7 @@ def translate(ref: MessageRef, uid: str = Depends(current_uid)):
         raise HTTPException(409, "clarification.answer を書いてから呼んでください")
     if answer.get("type") not in ("option", "free_text", "unsure"):
         raise HTTPException(400, "answer.type は option / free_text / unsure のどれかです")
+    _claim(m_ref, ("clarifying", "error"))
     try:
         translation = _patient_translate(session, msg, {
             "target": c["target"],
@@ -240,7 +281,7 @@ def translate(ref: MessageRef, uid: str = Depends(current_uid)):
     except Exception as e:
         _fail(m_ref, e)
     update = {"translation": translation, "status": "confirmed", "error": firestore.DELETE_FIELD}
-    m_ref.update(update)
+    m_ref.update({**update, "lockedUntil": firestore.DELETE_FIELD})
     return {**update, "error": None}
 
 

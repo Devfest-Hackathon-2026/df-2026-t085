@@ -93,6 +93,15 @@ store = {
     S + "/messages/m3": {"from": "doctor", "original": "1日3回飲んでください。", "status": "analyzing"},
 }
 main._db = FakeDB(store)
+
+
+def fake_transact(m_ref, check):  # 本物はトランザクション。ここでは読んで、check が通れば書くだけ
+    msg = m_ref.get().to_dict()
+    m_ref.update(check(msg))
+    return msg
+
+
+main._transact = fake_transact
 unsaid_ai.analyze_single, unsaid_ai.translate, unsaid_ai.warm_up = fake_analyze, fake_translate, lambda: None
 unsaid_ai.clarify, unsaid_ai.facts = fake_clarify, fake_facts
 main.app.dependency_overrides[main.current_uid] = lambda: "patient"
@@ -135,13 +144,38 @@ check("医師の発言に /analyze は 400", post("/analyze", "m3").status_code 
 
 store[S + "/messages/m4"] = {"from": "patient", "original": "I feel dizzy.", "status": "analyzing"}
 boom = lambda *a: (_ for _ in ()).throw(RuntimeError("boom"))
-unsaid_ai.clarify = boom
+unsaid_ai.clarify, unsaid_ai.translate = boom, boom
 check("Gemini 失敗 → 502", post("/analyze", "m4").status_code == 502)
 check("失敗したら status=error", m("m4")["status"] == "error")
+check("失敗したら処理中の印は外す", "lockedUntil" not in m("m4"))
+unsaid_ai.translate = fake_translate
 unsaid_ai.clarify, unsaid_ai.facts = fake_clarify, boom
 check("error からやり直せる", post("/analyze", "m4").status_code == 200 and m("m4")["status"] == "confirmed")
 check("facts だけ失敗しても発言は止めない（facts=[]）", m("m4")["facts"] == [])
 unsaid_ai.facts = fake_facts
+check("終わったら処理中の印は外す", "lockedUntil" not in m("m4"))
+
+# 確認質問の呼び出しだけ失敗 → 確認なしの翻訳で進める（発言を止めない）
+store[S + "/messages/m6"] = {"from": "patient", "original": "I've had a headache for a while.", "status": "analyzing"}
+unsaid_ai.clarify = boom
+r = post("/analyze", "m6")
+check("確認質問が失敗しても confirmed まで進む", r.status_code == 200 and m("m6")["status"] == "confirmed")
+check("医師には確認できなかったと注意書きを出す", main.NO_CHECK_NOTE in m("m6")["translation"]["note"])
+unsaid_ai.clarify = fake_clarify
+
+# 処理中の印（二重に届いた「もう一度」で Gemini を2回呼ばない）
+from datetime import datetime, timedelta, timezone
+now = datetime.now(timezone.utc)
+store[S + "/messages/m7"] = {"from": "patient", "original": "I feel dizzy.", "status": "analyzing",
+                             "lockedUntil": now + timedelta(seconds=30)}
+n = len(calls)
+check("処理中の発言にもう一度届いたら 409", post("/analyze", "m7").status_code == 409)
+check("処理中なら Gemini を呼ばない", len(calls) == n and m("m7")["status"] == "analyzing")
+m("m7")["lockedUntil"] = now - timedelta(seconds=1)
+check("印の期限が切れていればやり直せる", post("/analyze", "m7").status_code == 200 and m("m7")["status"] == "confirmed")
+store[S + "/messages/m8"] = {"from": "doctor", "original": "お大事に。", "status": "analyzing",
+                             "lockedUntil": now + timedelta(seconds=30)}
+check("医師の発言も処理中なら 409", post("/translate", "m8").status_code == 409 and m("m8")["status"] == "analyzing")
 
 store[S + "/messages/m5"] = {"from": "patient", "original": "I've had a headache for a while.", "status": "analyzing"}
 unsaid_ai.ANALYZE_MODE = "single"
@@ -164,7 +198,7 @@ check("患者の音声 → 文字が返る", r.status_code == 200 and r.json()["
 check("患者の音声は patientLang で聞く", heard[-1] == "en")
 tx("doctor")
 check("医師の音声は doctorLang で聞く", heard[-1] == "ja")
-check("文字にしただけでは Firestore に書かない", len(store) == 6)
+check("文字にしただけでは Firestore に書かない", len(store) == 9)
 check("空の音声は 400", tx("patient", b"").status_code == 400)
 check("大きすぎる音声は 413", tx("patient", b"x" * (main.MAX_AUDIO_BYTES + 1)).status_code == 413)
 check("speaker が不正なら 422", tx("nurse").status_code == 422)
@@ -180,6 +214,36 @@ main.app.dependency_overrides[main.current_uid] = lambda: "doctor"
 r = client.post("/translate", json={"sessionId": "s2", "messageId": "d1"})
 check("患者が参加する前（patientLang null）は 409", r.status_code == 409)
 check("患者が参加する前は何も書かない", store["sessions/s2/messages/d1"]["status"] == "analyzing")
+
+# --- 混雑（429）が続いたら予備のモデルに切り替える ---
+class Busy(Exception):
+    code = 429
+
+
+class FakeModels:
+    def __init__(self):
+        self.models = []
+
+    def generate_content(self, model, **kw):
+        self.models.append(model)
+        if model != "fallback-model":
+            raise Busy()
+        return type("Res", (), {"text": '{"ok": true}', "usage_metadata": None})()
+
+
+fm = FakeModels()
+unsaid_ai._client_ = lambda: type("C", (), {"models": fm})()
+unsaid_ai.BACKOFF_BASE_SEC = 0
+unsaid_ai.FALLBACK_MODEL = "fallback-model"
+out, _ = unsaid_ai._call("prompts/translate_system.txt", "schemas/translate.json", {})
+check("429 が2回続いたら予備のモデルに切り替える", out["ok"] and fm.models == [unsaid_ai.MODEL] * 2 + ["fallback-model"])
+unsaid_ai.FALLBACK_MODEL = ""
+fm.models = []
+try:
+    unsaid_ai._call("prompts/translate_system.txt", "schemas/translate.json", {})
+    check("予備が無ければ再試行を使い切って失敗", False)
+except Busy:
+    check("予備が無ければ再試行を使い切って失敗", len(fm.models) == unsaid_ai.RETRIES_429 + 1)
 
 print(f"\n{fails} 件 FAIL" if fails else "\nすべて PASS")
 sys.exit(1 if fails else 0)

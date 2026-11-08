@@ -36,12 +36,12 @@ const msgRef = (sid, mid) => doc(db, "sessions", sid, "messages", mid);
 // 患者が選べる言語（unsaid_ai.py の LANGS / firestore.rules と同じ）
 export const PATIENT_LANGS = ["en", "zh-CN", "vi"];
 
-// 医師の端末: session を作り、id を返す。patientLang は患者が QR から参加するときに決まる（それまで null）。
-// 以前の「患者が作る」流れも残している: createSession("en") なら言語つきで作る
-export async function createSession(patientLang = null) {
+// 医師の端末: session を作り、id を返す。作った人が医師（members[0]）になる（firestore.rules）。
+// patientLang は患者が QR から参加するときに決まる（それまで null）
+export async function createSession() {
   const user = await login();
   const ref = await addDoc(collection(db, "sessions"), {
-    patientLang, doctorLang: "ja", members: [user.uid], createdAt: serverTimestamp(),
+    patientLang: null, doctorLang: "ja", members: [user.uid], createdAt: serverTimestamp(),
   });
   return ref.id;
 }
@@ -118,18 +118,27 @@ async function callApi(path, sid, mid) {
 
 // 発言する（from は "patient" / "doctor"）。吹き出しは addDoc の時点で watchMessages に出る。
 // await の後に画面を変えないこと（確認質問は onSnapshot の方が早く届く）
+// API の呼び出しだけが失敗したとき（発言はもうある）、エラーに e.messageId が付く。
+// その発言は画面で「もう一度」を出す（retry）。e.messageId が無ければ発言自体を作れていない
 export async function say(sid, from, text) {
   const ref = await addDoc(collection(db, "sessions", sid, "messages"), {
     from, original: text, status: "analyzing", createdAt: serverTimestamp(),
   });
-  await callApi(from === "patient" ? "/analyze" : "/translate", sid, ref.id);
+  await callApi(from === "patient" ? "/analyze" : "/translate", sid, ref.id).catch((e) => {
+    e.messageId = ref.id;
+    throw e;
+  });
   return ref.id;
 }
 
 // 患者: 確認質問に答える。type は "option"（text = 選んだ選択肢）/ "free_text"（text = 入力）/ "unsure"（text = ""）
+// 回答は書けたが API の呼び出しが失敗したときは、say と同じく e.messageId が付く
 export async function answer(sid, mid, type, text = "") {
   await updateDoc(msgRef(sid, mid), { "clarification.answer": { type, text } });
-  await callApi("/translate", sid, mid);
+  await callApi("/translate", sid, mid).catch((e) => {
+    e.messageId = mid;
+    throw e;
+  });
 }
 
 // 患者: 逆翻訳を見て「送信」（status confirmed のときだけ）
@@ -138,7 +147,8 @@ export const send = (sid, mid) => updateDoc(msgRef(sid, mid), { status: "sent", 
 // 医師: 患者の発言を表示したら「受け取った」（status sent のときだけ）
 export const receive = (sid, mid) => updateDoc(msgRef(sid, mid), { status: "received", receivedAt: serverTimestamp() });
 
-// 「もう一度」: status が error の発言を止まった所から呼び直す（m は watchMessages で受け取った1件）
+// 「もう一度」: status が error の発言、または待ちのまま止まった発言（ui.js の stuckWatch）を、
+// 止まった所から呼び直す（m は watchMessages で受け取った1件）。サーバーがまだ処理中なら 409 で何もしない
 export function retry(sid, m) {
   const path = m.from === "patient" && !m.clarification?.answer ? "/analyze" : "/translate";
   return callApi(path, sid, m.id);
