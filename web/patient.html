@@ -13,7 +13,7 @@
 <main id="app"></main>
 <script type="module">
 import * as unsaid from "./unsaid.js";
-import { h, MIC_SVG, STOP_SVG, highlight, toast, micController } from "./ui.js";
+import { h, MIC_SVG, STOP_SVG, highlight, toast, micController, buildMemo, isConfirmed, ATTRS } from "./ui.js";
 
 // 患者の画面の文言（PATIENT_LANGS と同じ言語）。確認質問・選択肢はサーバーが患者の言語で作る
 const T = {
@@ -209,41 +209,31 @@ const screens = {
 // ── 自分のメモ（医師に届いた内容を、自分の言語・自分の言い方で見返す）──
 // 医師画面の問診メモと同じ facts から作る。確かめた語は自分の答えに置き換える。診断の言葉は足さない
 const KINDS = ["symptom", "onset", "frequency", "severity", "medication", "allergy", "other"];
-const SINGLE = new Set(["onset", "frequency", "severity"]); // 言い直したら最新だけ
 const norm = (x) => x.toLowerCase().replace(/[\s.,!?。、，！？]/g, "");
-
-function memoGroups() {
-  const groups = new Map();
-  for (const m of S.msgs) {
-    if (m.from !== "patient" || !["sent", "received"].includes(m.status)) continue;
-    const c = m.clarification;
-    const a = c?.answer;
-    for (const f of m.facts ?? []) {
-      const confirmed = a && a.type !== "unsure" && a.text && c.target && f.text.includes(c.target);
-      const text = confirmed ? a.text : f.text;
-      const list = SINGLE.has(f.kind) ? [] : (groups.get(f.kind) ?? []).filter((x) => norm(x.text) !== norm(text));
-      list.push({ text, confirmed, negated: f.negated });
-      groups.set(f.kind, list);
-    }
-  }
-  return groups;
-}
-const memoItems = () => [...memoGroups().values()].flat();
+const memoData = () => buildMemo(S.msgs, (f, m) => {
+  const confirmed = isConfirmed(f, m) && Boolean(m.clarification.answer.text);
+  return { text: confirmed ? m.clarification.answer.text : f.text, confirmed, negated: f.negated };
+}, norm);
+const memoItems = () => ({ length: memoData().count });
 
 const sheet = h("dialog", { class: "p-sheet", onclick: (e) => { if (e.target === sheet) sheet.close(); } });
 document.body.append(sheet);
 function paintMemo() {
-  const groups = memoGroups();
+  const { symptoms, others, count } = memoData();
+  const line = (it) => [it.negated ? `✕ ${it.text}` : it.text, it.confirmed && h("span", { class: "check", "aria-hidden": "true" }, " ✓")];
+  const groups = [];
+  if (symptoms.length) groups.push(h("div", { class: "p-memo-group" }, h("div", { class: "k" }, t.kinds.symptom),
+    symptoms.map((sy) => h("div", { class: "sym" }, h("div", { class: "v" }, line(sy)),
+      ATTRS.filter((a) => sy.attrs[a]).map((a) => h("div", { class: "attr" }, h("span", { class: "ak" }, t.kinds[a]), line(sy.attrs[a])))))));
+  for (const k of KINDS) if (others.has(k)) {
+    groups.push(h("div", { class: "p-memo-group" }, h("div", { class: "k" }, t.kinds[k]), others.get(k).map((it) => h("div", { class: "v" }, line(it)))));
+  }
   sheet.replaceChildren(h("div", { class: "p-sheet-in" },
     h("div", { class: "p-sheet-head" },
       h("h2", {}, t.memo),
       h("button", { class: "btn-link", onclick: () => sheet.close() }, t.close)),
     h("p", { class: "p-sheet-sub" }, t.memoSub),
-    groups.size ? KINDS.filter((k) => groups.has(k)).map((k) => h("div", { class: "p-memo-group" },
-      h("div", { class: "k" }, t.kinds?.[k] ?? k),
-      groups.get(k).map((it) => h("div", { class: "v" }, it.negated ? `✕ ${it.text}` : it.text,
-        it.confirmed && h("span", { class: "check", "aria-hidden": "true" }, " ✓")))))
-      : h("p", { class: "p-sheet-sub" }, t.memoEmpty)));
+    count ? groups : h("p", { class: "p-sheet-sub" }, t.memoEmpty)));
 }
 function openMemo() { paintMemo(); sheet.showModal(); }
 
