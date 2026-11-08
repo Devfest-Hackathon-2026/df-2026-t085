@@ -3,3 +3,8 @@ __pycache__/
 .venv/
 .env
 node_modules
+
+# deploy cache / local agent skills
+.firebase/
+.claude/skills/
+skills-lock.json
