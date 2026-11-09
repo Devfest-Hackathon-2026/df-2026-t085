@@ -1,0 +1,351 @@
+{
+ "type": "object",
+ "properties": {
+  "intent_state": {
+   "type": "string",
+   "enum": [
+    "resolved",
+    "clarification_required",
+    "unresolved"
+   ]
+  },
+  "speech_act": {
+   "type": "string",
+   "enum": [
+    "statement",
+    "question",
+    "answer",
+    "instruction",
+    "request",
+    "offer",
+    "accept",
+    "decline",
+    "consent",
+    "refuse",
+    "confirm_understanding",
+    "greeting",
+    "other"
+   ]
+  },
+  "summary_listener": {
+   "type": "string"
+  },
+  "interpretations": {
+   "type": "array",
+   "maxItems": 4,
+   "items": {
+    "type": "object",
+    "properties": {
+     "meaning_speaker": {
+      "type": "string"
+     },
+     "meaning_listener": {
+      "type": "string"
+     },
+     "speech_act": {
+      "type": "string",
+      "enum": [
+       "statement",
+       "question",
+       "answer",
+       "instruction",
+       "request",
+       "offer",
+       "accept",
+       "decline",
+       "consent",
+       "refuse",
+       "confirm_understanding",
+       "greeting",
+       "other"
+      ]
+     }
+    },
+    "required": [
+     "meaning_speaker",
+     "meaning_listener",
+     "speech_act"
+    ]
+   }
+  },
+  "question_speaker": {
+   "type": "string"
+  },
+  "reason_speaker": {
+   "type": "string"
+  },
+  "frame": {
+   "type": "object",
+   "properties": {
+    "speech_act": {
+     "type": "string",
+     "enum": [
+      "statement",
+      "question",
+      "answer",
+      "instruction",
+      "request",
+      "offer",
+      "accept",
+      "decline",
+      "consent",
+      "refuse",
+      "confirm_understanding",
+      "greeting",
+      "other"
+     ]
+    },
+    "polarity": {
+     "type": "string",
+     "enum": [
+      "affirmative",
+      "negative",
+      "mixed",
+      "none"
+     ]
+    },
+    "modality": {
+     "type": "string",
+     "enum": [
+      "none",
+      "must",
+      "must_not",
+      "should",
+      "should_not",
+      "may",
+      "can",
+      "cannot",
+      "want",
+      "unknown"
+     ]
+    },
+    "certainty": {
+     "type": "string",
+     "enum": [
+      "certain",
+      "uncertain",
+      "unknown"
+     ]
+    },
+    "actor": {
+     "type": "string",
+     "enum": [
+      "speaker",
+      "addressee",
+      "both",
+      "third_party",
+      "unspecified"
+     ]
+    },
+    "action": {
+     "type": "string"
+    },
+    "object": {
+     "type": "string"
+    },
+    "negated": {
+     "type": "array",
+     "maxItems": 8,
+     "items": {
+      "type": "string"
+     }
+    },
+    "times": {
+     "type": "array",
+     "maxItems": 8,
+     "items": {
+      "type": "object",
+      "properties": {
+       "kind": {
+        "type": "string",
+        "enum": [
+         "relative_day",
+         "relative_week",
+         "weekday",
+         "clock",
+         "duration",
+         "date",
+         "part_of_day",
+         "other"
+        ]
+       },
+       "value": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "kind",
+       "value"
+      ]
+     }
+    },
+    "quantities": {
+     "type": "array",
+     "maxItems": 8,
+     "items": {
+      "type": "object",
+      "properties": {
+       "value": {
+        "type": "number"
+       },
+       "unit": {
+        "type": "string",
+        "enum": [
+         "tablet",
+         "capsule",
+         "mg",
+         "g",
+         "ml",
+         "drop",
+         "pack",
+         "times",
+         "day",
+         "week",
+         "month",
+         "hour",
+         "minute",
+         "celsius",
+         "year",
+         "other"
+        ]
+       },
+       "of": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "value",
+       "unit",
+       "of"
+      ]
+     }
+    },
+    "frequency": {
+     "type": "array",
+     "maxItems": 4,
+     "items": {
+      "type": "object",
+      "properties": {
+       "count": {
+        "type": "number"
+       },
+       "per": {
+        "type": "string",
+        "enum": [
+         "day",
+         "week",
+         "month",
+         "hour",
+         "meal",
+         "other"
+        ]
+       },
+       "of": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "count",
+       "per",
+       "of"
+      ]
+     }
+    },
+    "conditions": {
+     "type": "array",
+     "maxItems": 4,
+     "items": {
+      "type": "string"
+     }
+    },
+    "medical_entities": {
+     "type": "array",
+     "maxItems": 10,
+     "items": {
+      "type": "object",
+      "properties": {
+       "concept": {
+        "type": "string"
+       },
+       "presence": {
+        "type": "string",
+        "enum": [
+         "present",
+         "absent",
+         "uncertain"
+        ]
+       }
+      },
+      "required": [
+       "concept",
+       "presence"
+      ]
+     }
+    },
+    "unresolved_slots": {
+     "type": "array",
+     "maxItems": 6,
+     "items": {
+      "type": "string"
+     }
+    }
+   },
+   "required": [
+    "speech_act",
+    "polarity",
+    "modality",
+    "certainty",
+    "actor",
+    "action",
+    "object",
+    "negated",
+    "times",
+    "quantities",
+    "frequency",
+    "conditions",
+    "medical_entities",
+    "unresolved_slots"
+   ]
+  },
+  "evidence": {
+   "type": "array",
+   "maxItems": 10,
+   "items": {
+    "type": "object",
+    "properties": {
+     "element": {
+      "type": "string",
+      "enum": [
+       "negation",
+       "quantity",
+       "time",
+       "frequency",
+       "condition",
+       "action",
+       "entity",
+       "modality",
+       "other"
+      ]
+     },
+     "quote": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "element",
+     "quote"
+    ]
+   }
+  }
+ },
+ "required": [
+  "intent_state",
+  "speech_act",
+  "summary_listener",
+  "interpretations",
+  "question_speaker",
+  "reason_speaker",
+  "frame",
+  "evidence"
+ ]
+}

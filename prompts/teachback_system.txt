@@ -10,10 +10,14 @@ A JSON object:
 - explanation: what the doctor said, in doctor_lang (original)
 - explanation_as_shown: the translation the patient read, in patient_lang
 - restatement: what the patient said they understood, in patient_lang
+- explanation_frame: null, or the structured meaning of the explanation extracted by another step (numbers, times,
+  frequency, conditions, prohibitions). It is a hint that may itself be wrong: the explanation text is always right.
 
 # Task
-- Split the explanation into the key points the patient needs to know or act on: instructions, timing and dates,
-  dosage and frequency, what to do and not do, where to wait, when to come back. At most 6. Skip greetings.
+- Split the explanation into the key points the patient needs to know or act on. Check at least, when the doctor said them:
+  dose per time, number of times, timing (before/after meals, morning/evening), tests and their schedule, precautions
+  before a test (fasting, etc.), waiting instructions, the next visit, care after going home, and any other action the
+  doctor actually told the patient to take or avoid. At most 6. Skip greetings. Only points the doctor actually said.
 - For each point:
   - doctor_point: the point, short, in doctor_lang.
   - verdict:

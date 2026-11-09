@@ -54,6 +54,12 @@ class Api:
         ref.set({"from": frm, "original": text, "status": "analyzing", "createdAt": fakestore.server_now(), **extra})
         return ref.id
 
+    def session(self):
+        return self.db.collection("sessions").document(self.sid).get().to_dict()
+
+    def issues(self):
+        return (self.session().get("audit") or {}).get("issues", [])
+
     def patient_says(self, text, send=True, **extra):
         mid = self.as_("pat").say("patient", text, **extra)
         r = self.post("/analyze", messageId=mid)
@@ -62,9 +68,10 @@ class Api:
             assert self.post("/send", messageId=mid).status_code == 200
         return mid
 
-    def doctor_says(self, text):
-        mid = self.as_("doc").say("doctor", text)
-        assert self.post("/translate", messageId=mid).status_code == 200
+    def doctor_says(self, text, **extra):
+        mid = self.as_("doc").say("doctor", text, **extra)
+        r = self.post("/translate", messageId=mid)
+        assert r.status_code == 200, r.text
         return mid
 
 

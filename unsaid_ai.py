@@ -14,7 +14,13 @@ PROJECT = "unsaid-devfest"
 LOCATION = "global"
 MODEL = "gemini-3.8-flash"
 # translate だけ軽いモデルに替えて速度を比べられるようにしておく（例: Flash-Lite 系）
-TRANSLATE_MODEL = MODEL
+TRANSLATE_MODEL = os.environ.get("TRANSLATE_MODEL", MODEL)
+# USSA の役割ごとのモデル（Cloud Run の環境変数で替えられる）。既定はすべて同じモデル。
+# 検証（VERIFY_MODEL）を翻訳と別のモデルにすると、同じ誤りを共有しにくくなる（それでも一致は正しさの証明ではない）。
+# 重要な意味の検証を軽いモデルにするのは、実測で精度が落ちないと分かるまでしない（DESIGN_DECISIONS.md）
+SOURCE_MODEL = os.environ.get("SOURCE_MODEL", MODEL)
+VERIFY_MODEL = os.environ.get("VERIFY_MODEL", MODEL)
+AUDIT_MODEL = os.environ.get("AUDIT_MODEL", MODEL)
 # 1回の待ち時間の上限と、超えたときの再試行回数。
 # 実測では普段 2〜7 秒、まれに 40〜70 秒かかる外れ値があったため、待たずに打ち直す
 TIMEOUT_SEC = 12
@@ -257,7 +263,8 @@ def _snap_target(target, utterance):
     return snapped if len(snapped) >= 2 else target
 
 
-def translate(original, source_lang, target_lang, direction, clarification=None, context=None):
+def translate(original, source_lang, target_lang, direction, clarification=None, context=None,
+              turns=None, confirmed_intent=None, fix=None):
     """確認後の翻訳。direction は "patient_to_doctor" か "doctor_to_patient"。
 
     clarification は {"target", "question", "answer_type": option|free_text|unsure, "answer"} か None。
@@ -272,7 +279,40 @@ def translate(original, source_lang, target_lang, direction, clarification=None,
     }
     if context:
         payload["context"] = context
+    for k, v in (("turns", turns), ("confirmed_intent", confirmed_intent), ("fix", fix)):
+        if v:
+            payload[k] = v
     return _call("prompts/translate_system.txt", "schemas/translate.json", model=TRANSLATE_MODEL, payload=payload)
+
+
+def source_agent(utterance, speaker, speaker_lang, listener_lang, turns=None):
+    """Source Agent: 発話意図（文脈で決まるか・本人に聞くべきか）と、原文の意味の枠（Semantic Bridge）。検証は ussa.build_intent。"""
+    return _call("prompts/source_system.txt", "schemas/source.json", model=SOURCE_MODEL, payload={
+        "speaker": speaker, "speaker_lang": _lang(speaker_lang), "listener_lang": _lang(listener_lang),
+        "utterance": utterance, "context": turns or [],
+    })
+
+
+def extract_frame(text, lang, speaker):
+    """Verification Engine の B: 訳文だけから、独立に意味の枠を取る（原文は渡さない）。"""
+    return _call("prompts/frame_system.txt", "schemas/frame_extract.json", model=VERIFY_MODEL,
+                 payload={"lang": _lang(lang), "speaker": speaker, "text": text})
+
+
+def compare_meaning(source, source_lang, translation, target_lang, speaker, confirmed_intent=None, doctor_lang="ja"):
+    """Verification Engine の C: 原文と訳文を直接照合する。翻訳した側の判断（意図の推測など）は渡さない。"""
+    return _call("prompts/verify_system.txt", "schemas/verify_compare.json", model=VERIFY_MODEL, payload={
+        "source_lang": _lang(source_lang), "target_lang": _lang(target_lang), "doctor_lang": _lang(doctor_lang),
+        "speaker": speaker, "source": source, "translation": translation, "confirmed_intent": confirmed_intent,
+    })
+
+
+def audit(latest, memory, open_issues, closed_issues, doctor_lang="ja"):
+    """Conversation Auditor: 最新の発言と、記憶（重要な発言の要点）と、未解決事項だけを渡す（会話全体は渡さない）。"""
+    return _call("prompts/audit_system.txt", "schemas/audit.json", model=AUDIT_MODEL, payload={
+        "doctor_lang": _lang(doctor_lang), "latest": latest, "memory": memory,
+        "open_issues": open_issues, "closed_issues": closed_issues,
+    })
 
 
 def meaning(utterance, patient_lang, doctor_lang="ja", context=None, already_asked=None, pending_question=None):
@@ -290,14 +330,17 @@ def meaning(utterance, patient_lang, doctor_lang="ja", context=None, already_ask
     })
 
 
-def compare_understanding(explanation, explanation_as_shown, restatement, patient_lang, doctor_lang="ja"):
-    """理解の確認（teach-back）: 医師の説明と、患者が自分の言葉で言い直した内容を比べる。検証は clinical.build_teachback。"""
+def compare_understanding(explanation, explanation_as_shown, restatement, patient_lang, doctor_lang="ja",
+                          explanation_frame=None):
+    """理解の確認（teach-back）: 医師の説明と、患者が自分の言葉で言い直した内容を比べる。検証は clinical.build_teachback。
+    explanation_frame は説明の意味の枠（ヒント。説明の文が常に正しい）。"""
     return _call("prompts/teachback_system.txt", "schemas/teachback.json", {
         "doctor_lang": _lang(doctor_lang),
         "patient_lang": _lang(patient_lang),
         "explanation": explanation,
         "explanation_as_shown": explanation_as_shown,
         "restatement": restatement,
+        "explanation_frame": explanation_frame,
     })
 
 

@@ -23,19 +23,19 @@ def fact_by_quote(api, mid, quote):
 
 # ── シナリオ A: めまいの曖昧さ ──
 def test_scenario_a_dizziness_end_to_end(api):
-    mid = api.patient_says(fake_ai.A_TEXT, send=False)
+    mid = api.patient_says(fake_ai.A_TEXT)
     m = api.get(mid)
-    # 1〜3) 認識・翻訳・構造化。患者は逆翻訳を見て送る前（医師にはまだ出ない）
-    assert m["status"] == "confirmed" and m["translation"]["text"] == fake_ai.A_JA
-    assert m["clarification"] is None  # 医師の確認なしに患者へ質問は出さない
+    # 1〜3) 認識・翻訳・構造化。患者の送信操作1回で、意図の解析・検証・Safety Gate を通って医師に届く
+    assert m["status"] == "sent" and m["translation"]["text"] == fake_ai.A_JA
+    assert m["gate"]["state"] == "SENT" and m["gate"]["verification"]["status"] == "VERIFIED"
+    assert m["gate"]["intent"]["state"] == "RESOLVED" and m["gate"]["intent"]["decided_by"] == "ai"
+    assert m.get("clarification") is None  # 医師の確認なしに患者へ質問は出さない
     assert m["meaning"]["status"] == "ready"
     # 4) 不安感（本人の言葉）を残す。5) めまいの曖昧さを確認候補にする
     psych = fact_by_quote(api, mid, "我有点害怕")
     assert psych["category"] == "psychological" and psych["status"] == C.AI_EXTRACTED
     assert cand_of(api, mid)["source_quote"] == "头晕" and cand_of(api, mid)["status"] == "proposed"
     assert m["facts"] and m["facts"][0]["doctor_gloss"]  # 旧い形（患者の「自分のメモ」用）も書く
-    assert api.as_("pat").post("/send", messageId=mid).status_code == 200
-    assert api.get(mid)["status"] == "sent"
 
     # 6〜7) 医師が確認候補をそのまま送る
     r = api.as_("doc").post("/clarify/send", messageId=mid, candidateId="c1")
@@ -70,46 +70,26 @@ def test_scenario_a_dizziness_end_to_end(api):
 def test_scenario_a_free_text_answer_with_context(api):
     mid = api.patient_says(fake_ai.A_TEXT)
     qid = api.as_("doc").post("/clarify/send", messageId=mid, candidateId="c1").json()["messageId"]
-    aid = api.patient_says(fake_ai.A_ANSWER, send=False, replyTo=qid, answer={"type": "free_text"})
+    aid = api.patient_says(fake_ai.A_ANSWER, replyTo=qid, answer={"type": "free_text"})
     a = api.get(aid)
-    # 自由回答は逆翻訳を見てから送る。解析は済んでいるが、送るまで元の情報は変えない
-    assert a["status"] == "confirmed" and a["meaning"]["resolution"]["resolves"] == "yes"
-    assert fact_by_quote(api, mid, "头晕")["status"] == C.UNCONFIRMED
-    api.as_("pat").post("/send", messageId=aid)
+    # 自由回答も Safety Gate を通って届き、届いた後に元の情報に結びつく
+    assert a["status"] == "sent" and a["meaning"]["resolution"]["resolves"] == "yes"
     dizzy = fact_by_quote(api, mid, "头晕")
     assert dizzy["status"] == C.PATIENT_ANSWERED and dizzy["resolved_meaning"] == "回転性のめまい（周囲がぐるぐる回る）"
     # 答えも新しい発言として記録され、自分の facts を持つ
     assert api.get(aid)["meaning"]["facts"][0]["category"] == "quality"
 
 
-def test_answer_sent_before_analysis_finishes_is_applied_later(api):
-    """患者が送るのが先・解析が後でも、結果は同じになる（順番が前後しても整合性を保つ）。"""
+def test_apply_reply_is_idempotent(api):
+    """答えの結びつけは何度呼んでも1回分（送信と解析の完了の両方から呼ばれても重複しない）。"""
     mid = api.patient_says(fake_ai.A_TEXT)
     qid = api.as_("doc").post("/clarify/send", messageId=mid, candidateId="c1").json()["messageId"]
-    aid = api.as_("pat").say("patient", fake_ai.A_ANSWER, replyTo=qid, answer={"type": "free_text"})
-    # 解析の前に「送信済み」になっていた（古い画面が直接書いた場合など）
-    api.msgs().document(aid).update({"status": "confirmed"})
-    api.msgs().document(aid).update({"status": "sent"})
-    api.msgs().document(aid).update({"status": "analyzing"})
-    real = main._analyze_patient
-
-    def analyze_then_mark_sent(t0, s_ref, session, a_id, m_ref, msg, msgs, question=None):
-        orig_update = m_ref.update
-
-        def update(data):
-            orig_update(data)
-            if data.get("status") == "confirmed":
-                orig_update({"status": "sent"})  # 翻訳が出た直後に患者が送った
-        m_ref.update = update
-        return real(t0, s_ref, session, a_id, m_ref, msg, msgs, question)
-    main._analyze_patient = analyze_then_mark_sent
-    try:
-        assert api.post("/analyze", messageId=aid).status_code == 200
-    finally:
-        main._analyze_patient = real
-    assert fact_by_quote(api, mid, "头晕")["status"] == C.PATIENT_ANSWERED
-    api.as_("pat").post("/send", messageId=aid)  # もう一度当てても変わらない
+    aid = api.patient_says(fake_ai.A_ANSWER, replyTo=qid, answer={"type": "free_text"})
+    s_ref = api.db.collection("sessions").document(api.sid)
+    for _ in range(3):
+        main._apply_reply(s_ref, aid)
     assert len(cand_of(api, mid)["answers"]) == 1
+    assert fact_by_quote(api, mid, "头晕")["status"] == C.PATIENT_ANSWERED
 
 
 @pytest.mark.parametrize("atype", ["unsure", "none"])
@@ -174,8 +154,10 @@ def test_hold_dismiss_restore_and_bad_transitions(api):
 
 
 def test_second_utterance_does_not_repeat_question(api):
+    from datetime import datetime, timedelta, timezone
     api.patient_says(fake_ai.A_TEXT)
-    mid2 = api.patient_says(fake_ai.A_TEXT)  # 同じことをもう一度言った
+    # 少し時間をおいて同じことをもう一度言った（二重送信ではない）
+    mid2 = api.patient_says(fake_ai.A_TEXT, createdAt=datetime.now(timezone.utc) + timedelta(seconds=30))
     assert api.get(mid2)["meaning"]["candidates"] == []
 
 

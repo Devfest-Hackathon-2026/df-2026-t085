@@ -1,0 +1,103 @@
+{
+ "type": "object",
+ "properties": {
+  "new_issues": {
+   "type": "array",
+   "maxItems": 5,
+   "items": {
+    "type": "object",
+    "properties": {
+     "type": {
+      "type": "string",
+      "enum": [
+       "contradiction",
+       "understanding_mismatch",
+       "unanswered_question",
+       "unresolved_clarification",
+       "quantity_time_mismatch",
+       "insufficient_explanation",
+       "inconsistent_with_past",
+       "meaning_drift",
+       "instruction_misunderstanding"
+      ]
+     },
+     "description_doctor": {
+      "type": "string"
+     },
+     "related_utterance_ids": {
+      "type": "array",
+      "maxItems": 6,
+      "items": {
+       "type": "string"
+      }
+     },
+     "evidence": {
+      "type": "array",
+      "maxItems": 6,
+      "items": {
+       "type": "object",
+       "properties": {
+        "utterance_id": {
+         "type": "string"
+        },
+        "quote": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "utterance_id",
+        "quote"
+       ]
+      }
+     },
+     "severity": {
+      "type": "string",
+      "enum": [
+       "high",
+       "medium",
+       "low"
+      ]
+     },
+     "suggested_question_doctor": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "type",
+     "description_doctor",
+     "related_utterance_ids",
+     "evidence",
+     "severity",
+     "suggested_question_doctor"
+    ]
+   }
+  },
+  "answered": {
+   "type": "array",
+   "maxItems": 5,
+   "items": {
+    "type": "object",
+    "properties": {
+     "issue_id": {
+      "type": "string"
+     },
+     "quote": {
+      "type": "string"
+     },
+     "note": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "issue_id",
+     "quote",
+     "note"
+    ]
+   }
+  }
+ },
+ "required": [
+  "new_issues",
+  "answered"
+ ]
+}

@@ -23,6 +23,7 @@ import logging
 import os
 import threading
 import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
@@ -36,6 +37,7 @@ from pydantic import BaseModel
 import clinical
 import stt
 import unsaid_ai
+import ussa
 
 log = logging.getLogger("unsaid")
 logging.basicConfig(level=logging.INFO)
@@ -69,6 +71,12 @@ SESSION_MAX_HOURS = int(os.environ.get("SESSION_MAX_HOURS", "12"))
 # ステージングは同じプロジェクトの別のデータベースに分けられる（ARCHITECTURE.md「環境の分け方」）。空なら (default)
 FIRESTORE_DATABASE = os.environ.get("FIRESTORE_DATABASE") or None
 MAX_QUESTION_CHARS = 300
+# Verification Engine で重要な不一致が出たときに訳し直す回数・検証の呼び出しが失敗したときにやり直す回数。
+# 使い切ったら発言者による確認（NEEDS_REVIEW）に切り替える（無制限に再試行しない）
+TRANSLATION_RETRIES = int(os.environ.get("TRANSLATION_RETRIES", "1"))
+VERIFY_RETRIES = 1
+# 同じ人が同じ文をこの秒数以内にもう一度送ったら、二重送信として取り消す
+DUPLICATE_SEC = 10
 
 @asynccontextmanager
 async def lifespan(app):
@@ -123,6 +131,7 @@ class ClarifySend(BaseModel):
     candidateId: str | None = None     # 確認候補をそのまま／編集して送るとき
     factId: str | None = None          # 自分で書いた質問を、元の発言のどの情報についてかひもづけるとき
     questionDoctor: str | None = None  # 編集した質問・自分で書いた質問（医師の言語）
+    issueId: str | None = None         # 未解決事項（Conversation Auditor）について聞くとき
 
 
 class CandidateAction(BaseModel):
@@ -144,6 +153,32 @@ class TeachbackAction(BaseModel):
     sessionId: str
     messageId: str
     action: str = ""  # resolve: confirm / reexplain
+
+
+class TeachbackStart(BaseModel):
+    sessionId: str
+    messageId: str                   # 医師の説明
+    previousId: str | None = None    # 再説明のとき、前の理解の確認の id（確認済みにすると前の相違も解決になる）
+
+
+class IntentChoice(BaseModel):
+    sessionId: str
+    messageId: str
+    choice: str       # 選択肢の id（i1 …）/ "free_text" / "none"（どれでもない → 言い直す）
+    text: str = ""    # free_text のときの説明（発言者の言語）
+
+
+class ReviewAction(BaseModel):
+    sessionId: str
+    messageId: str
+    action: str       # send_unverified（未検証として送る）/ rephrase（言い直す）
+
+
+class IssueAction(BaseModel):
+    sessionId: str
+    issueId: str
+    action: str       # hold / unhold / resolve / dismiss / reopen
+    note: str = ""
 
 
 def _expire_at():
@@ -309,17 +344,17 @@ def analyze(ref: MessageRef, uid: str = Depends(current_uid)):
     if msg.get("from") != "patient":
         raise HTTPException(400, "analyze は患者の発言だけです（医師の発言は /translate）")
     reply = _reply_target(s_ref, msg)
-    msg = _claim(m_ref, ("analyzing", "error"))
-    if msg.get("status") == "error":  # 「もう一度」のときだけ
-        m_ref.update({"status": "analyzing", "error": firestore.DELETE_FIELD})
-    if reply and reply[1].get("kind") == "clarify" and (msg.get("answer") or {}).get("type") in ("option", "unsure", "none"):
-        return _answer_fixed(s_ref, session, ref.messageId, m_ref, msg, reply[1])
     if not reply and CLARIFY_MODE == "patient":
+        msg = _claim(m_ref, ("analyzing", "error"))
+        if msg.get("status") == "error":  # 「もう一度」のときだけ
+            m_ref.update({"status": "analyzing", "error": firestore.DELETE_FIELD})
         return _analyze_legacy(t0, session, m_ref, msg)
-    msgs = _all_messages(s_ref)
-    if reply and reply[1].get("kind") == "teachback":
-        return _analyze_teachback_answer(t0, s_ref, session, ref.messageId, m_ref, msg, reply[1], msgs)
-    return _analyze_patient(t0, s_ref, session, ref.messageId, m_ref, msg, msgs, reply[1] if reply else None)
+    if _role(session, uid) != "patient":
+        raise HTTPException(403, "患者の発言を送れるのは患者だけです")
+    if reply and reply[1].get("kind") == "clarify" and (msg.get("answer") or {}).get("type") in ("option", "unsure", "none"):
+        msg = _claim(m_ref, ("analyzing", "error"))
+        return _answer_fixed(s_ref, session, ref.messageId, m_ref, msg, reply[1])
+    return _gate_start(t0, s_ref, session, ref.messageId, m_ref, msg, "patient", reply[1] if reply else None)
 
 
 def _analyze_legacy(t0, session, m_ref, msg):
@@ -385,8 +420,13 @@ def _analyze_legacy(t0, session, m_ref, msg):
 def translate(ref: MessageRef, uid: str = Depends(current_uid)):
     """患者: 確認質問に答えた後に呼ぶ（答えは先に clarification.answer に書いておく）。
     医師: 発言を作った後に呼ぶ。確認なしで翻訳して sent にする。"""
-    _, session, m_ref, msg = _load(ref, uid)
+    s_ref, session, m_ref, msg = _load(ref, uid)
     status = msg.get("status")
+
+    if msg.get("from") == "doctor" and CLARIFY_MODE == "doctor":
+        if _role(session, uid) != "doctor":
+            raise HTTPException(403, "医師の発言を送れるのは医師だけです")
+        return _gate_start(time.time(), s_ref, session, ref.messageId, m_ref, msg, "doctor", None)
 
     if msg.get("from") == "doctor":
         if status not in ("analyzing", "error"):
@@ -514,37 +554,370 @@ def _meaning_result(future, msg, mid, session, known):
         return _empty_meaning("error", error=type(e).__name__)
 
 
-def _analyze_patient(t0, s_ref, session, mid, m_ref, msg, msgs, question=None):
-    """患者の発言（確認質問への自由回答を含む）: 翻訳と Meaning Engine を並列に投げる。患者が待つのは翻訳だけ。"""
-    tr_ctx = pending = None
-    if question:
-        c = question.get("clarify") or {}
-        tr_ctx = {"question_as_shown": question["translation"]["text"], "question": question["original"]}
-        pending = {"source_quote": c.get("source_quote", ""), "question_doctor_lang": question["original"],
-                   "question_patient_lang": question["translation"]["text"], "unresolved": c.get("unresolved", "")}
-    known = _known_quotes(msgs, mid)
-    f_tr = unsaid_ai.submit(_patient_translate, session, msg, None, tr_ctx)
-    f_mean = unsaid_ai.submit(unsaid_ai.meaning, msg["original"], session["patientLang"], session["doctorLang"],
-                              _context(msgs, mid), known, pending)
-    try:
-        tr = f_tr.result()
-    except Exception as e:
-        _fail(m_ref, e)
-    update = {"clarification": None, "translation": tr, "status": "confirmed"}
-    m_ref.update({**update, "lockedUntil": firestore.DELETE_FIELD})
-    shown = time.time() - t0
+# ───────────────────────── USSA: 送信操作から Safety Gate まで（ARCHITECTURE.md）─────────────────────────
+class _Stop(Exception):
+    """この解析の結果はもう使わない（取り消された・新しい解析が始まった・問診が終わった）。何も書かない。"""
 
-    meaning = _meaning_result(f_mean, msg, mid, session, known)
-    facts = clinical.legacy_facts(meaning)
-    m_ref.update({"meaning": meaning, "facts": facts})
-    if question:
-        _apply_reply(s_ref, mid)  # 解析より先に患者が送信していたら、ここで元の情報に結びつける
-    log.info("analyze mode=doctor shown=%.1fs meaning=%.1fs", shown, time.time() - t0)
-    return {**update, "meaning": meaning, "facts": facts}
+
+class _Refused(Exception):
+    """Safety Gate の最終チェックを通らなかった。送らずに FAILED にする（理由は gate.history に残す）。"""
+
+
+def _langs(session, role):
+    """(発言者の言語, 相手の言語)"""
+    if role == "patient":
+        return session["patientLang"], session["doctorLang"]
+    return session["doctorLang"], session["patientLang"]
+
+
+def _turns(msgs, upto_id, n=CONTEXT_TURNS):
+    """Source Agent と翻訳に渡す直前の会話（送信済みの発言の原文と訳）。"""
+    out = []
+    for mid, m in msgs:
+        if mid == upto_id:
+            break
+        if m.get("status") in SHOWN:
+            out.append({"speaker": m.get("from"), "original": (m.get("original") or "")[:300],
+                        "translation": ((m.get("translation") or {}).get("text") or "")[:300]})
+    return out[-n:]
+
+
+def _duplicate_of(msgs, mid, msg):
+    """同じ人が同じ文を DUPLICATE_SEC 秒以内にもう送っていて、取り消されていなければ、その id（二重送信）。"""
+    t = msg.get("createdAt")
+    if not isinstance(t, datetime):
+        return None
+    for oid, o in msgs:
+        ot = o.get("createdAt")
+        if (oid != mid and o.get("from") == msg.get("from") and o.get("original") == msg.get("original")
+                and o.get("replyTo") == msg.get("replyTo") and isinstance(ot, datetime) and ot <= t
+                and (t - ot).total_seconds() < DUPLICATE_SEC and o.get("status") not in ("cancelled", "error")):
+            return oid
+    return None
+
+
+def _new_gate():
+    # 端末が発言を作った（＝発言者が送信操作をした）時点で原文が決まる。下書き（DRAFT）は端末の入力欄の中だけ
+    return {"state": ussa.SOURCE_CONFIRMED, "source_confirmed_at": ussa.now_iso(), "history": [], "attempts": [],
+            "timings": {}, "revealed": []}
+
+
+def _gate_claim(m_ref, role, allowed, intent=None):
+    """解析を始める印。run_id が変わるので、前の解析が後から終わっても結果は送られない（古い結果の混入を防ぐ）。"""
+    holder = {}
+
+    def check(msg):
+        if msg.get("from") != role:
+            raise HTTPException(403, "発言者だけが操作できます")
+        now = datetime.now(timezone.utc)
+        g = msg.get("gate")
+        if g is None:
+            if msg.get("status") not in ("analyzing", "error"):
+                raise HTTPException(409, f"status が {msg.get('status')} なので処理済みです")
+            g = _new_gate()
+        locked = msg.get("lockedUntil")
+        if locked and locked > now:
+            raise HTTPException(409, "この発言は処理中です")
+        if g["state"] in (ussa.ANALYZING, ussa.VERIFYING):  # 前の解析が途中で止まった（処理中の印が切れた）
+            ussa.gate_move(g, ussa.FAILED, reason="stuck")
+        if g["state"] not in allowed:
+            raise HTTPException(409, f"送信の状態が {g['state']} なので解析できません")
+        ussa.gate_move(g, ussa.ANALYZING, by=role)
+        g["run_id"] = uuid.uuid4().hex[:12]
+        g["source_hash"] = ussa.source_hash(msg.get("original"))
+        g["run_started_at"] = ussa.now_iso()
+        if intent is not None:
+            g["intent"] = intent
+        holder["gate"] = g
+        return {"gate": g, "status": "analyzing", "lockedUntil": now + timedelta(seconds=LOCK_SEC),
+                "expireAt": _expire_at(), "error": firestore.DELETE_FIELD}
+    _transact(m_ref, check)
+    return holder["gate"]
+
+
+def _gate_update(m_ref, run_id, fn):
+    """今の解析（run_id）のときだけ gate を書き換える。fn(m, g) は gate を直し、ほかに書く項目を返す。"""
+    def tx(datas):
+        m = datas[0]
+        if not m:
+            raise _Stop("deleted")
+        g = m.get("gate") or {}
+        if g.get("run_id") != run_id or g.get("state") in (ussa.CANCELLED, ussa.SENT):
+            raise _Stop(g.get("state") or "stale")
+        extra = fn(m, g) or {}
+        return [{"gate": g, **extra}]
+    _tx([m_ref], tx)
+
+
+def _gate_fail(m_ref, run_id, stage, e):
+    log.warning("gate %s failed: %s", stage, type(e).__name__)  # 患者の発言・AI の出力はログに出さない
+
+    def f(m, g):
+        ussa.gate_move(g, ussa.FAILED, by="gate", reason=f"{stage}:{type(e).__name__}")
+        return {"status": "error", "error": type(e).__name__, "lockedUntil": firestore.DELETE_FIELD}
+    try:
+        _gate_update(m_ref, run_id, f)
+    except _Stop:
+        pass
+    raise HTTPException(502, "AI の呼び出しに失敗しました。もう一度お試しください（発言は残っています）")
+
+
+def _timed(fn, *a, **k):
+    t = time.time()
+    out, _ = fn(*a, **k)
+    out.pop("_meta", None)
+    return out, round((time.time() - t) * 1000)
+
+
+def _draft(msg, src_lang, dst_lang, direction, q_ctx, turns, ci, fix):
+    """Translation Agent: 原文から相手の言語へ直接訳す（英語を経由しない）。確認済みの意図だけを確定した意味として渡す。"""
+    out, ms = _timed(unsaid_ai.translate, msg["original"], src_lang, dst_lang, direction, None, q_ctx,
+                     turns=turns, confirmed_intent=ci, fix=fix)
+    return {"translation": out["translation"], "back_translation": out["back_translation"],
+            "note": out.get("note", "")}, ms
+
+
+def _verify(source, src_lang, translation, dst_lang, role, intent, ci, timings, key):
+    """Verification Engine: D（ルール）は今すぐ、B（訳文だけから枠）と C（直接の照合）は並列に。
+    A（原文の枠）は Source Agent が作ったもの。B と C には翻訳した側の判断を渡さない（C には本人が確認した意図だけ）。"""
+    t = time.time()
+    rules = ussa.rule_check(source, src_lang, translation, dst_lang)
+    frame_b = llm = None
+    failures = []
+    for _ in range(VERIFY_RETRIES + 1):
+        f_b = unsaid_ai.submit(_timed, unsaid_ai.extract_frame, translation, dst_lang, role)
+        f_c = unsaid_ai.submit(_timed, unsaid_ai.compare_meaning, source, src_lang, translation, dst_lang, role, ci)
+        failures = []
+        try:
+            raw_b, _ = f_b.result()
+            clinical.validate(raw_b, unsaid_ai.schema("frame_extract"))
+            frame_b = ussa.build_frame(raw_b["frame"], translation, raw_b.get("evidence", []))
+        except Exception as e:
+            failures.append(f"frame:{type(e).__name__}")
+        try:
+            raw_c, _ = f_c.result()
+            llm = ussa.build_llm_check(raw_c, source=source, translation=translation,
+                                       schema=unsaid_ai.schema("verify_compare"))
+        except Exception as e:
+            failures.append(f"compare:{type(e).__name__}")
+        if not failures:
+            break
+    frames = ussa.compare_frames(intent["frame"], frame_b) if frame_b else []
+    v = ussa.combine(rules, frames, llm if not failures else None, failures)
+    v["translation_frame"] = frame_b
+    timings[key] = round((time.time() - t) * 1000)
+    return v
+
+
+def _confirmed_frame(intent):
+    """本人が意図を確認したら、原文の枠の「発話行為」は確認した意味のものにし、字面の肯定・否定は使わない
+    （「没事」を「続けてよい」と確認したのに、字面の否定で訳の照合が食い違わないように）。"""
+    f = dict(intent["frame"])
+    c = intent.get("confirmed") or {}
+    f["speech_act"] = c.get("speech_act", "other") if c.get("kind") == "option" else "other"
+    f["polarity"] = "none"
+    return {**intent, "frame": f}
+
+
+def _deliver(s_ref, m_ref, run_id, role, *, verification, draft, attempts, timings, session, override=None):
+    """Safety Gate: 最新の発言をトランザクションで読み直し、ussa.send_checks をすべて満たすときだけ送る。
+    送るのはこのコードで、LLM ではない。問診が終わっていたら送らない。"""
+    def fn(datas):
+        m, sess = datas
+        if not m or not sess:
+            raise _Stop("deleted")
+        g = m.get("gate") or {}
+        if g.get("run_id") != run_id or g.get("state") in (ussa.CANCELLED, ussa.SENT):
+            raise _Stop(g.get("state") or "stale")
+        g["verification"], g["draft"], g["attempts"] = verification, draft, attempts
+        g.setdefault("timings", {}).update(timings)
+        if override:
+            g["override"] = override
+        ussa.gate_move(g, ussa.READY, by="gate")
+        fails = ussa.send_checks({**m, "gate": g}, run_id=run_id, author_role=role)
+        if fails:
+            log.warning("gate refused: %s", fails)
+            raise _Refused(",".join(fails))
+        ussa.gate_move(g, ussa.SENT, by="gate")
+        g["timings"]["total_ms"] = round((time.time() - _iso_ts(g.get("run_started_at"))) * 1000)
+        _, dst = _langs(session, role)
+        return [{"gate": g, "status": "sent", "sentAt": firestore.SERVER_TIMESTAMP, "lockedUntil": firestore.DELETE_FIELD,
+                 "translation": {"lang": dst, "text": draft["translation"], "back_translation": draft["back_translation"],
+                                 "note": draft.get("note", ""), "clarified_target": "", "clarified_answer": ""}}, None]
+    _tx([m_ref, s_ref], fn)
+
+
+def _iso_ts(iso):
+    try:
+        return datetime.fromisoformat(iso).timestamp()
+    except Exception:
+        return time.time()
+
+
+def _gate_start(t0, s_ref, session, mid, m_ref, msg, role, question):
+    """発言者の送信操作（発言を作った）の後に呼ばれる。二重送信なら取り消す。"""
+    msgs = _all_messages(s_ref)
+    dup = _duplicate_of(msgs, mid, msg)
+    if dup:
+        def check(m):
+            g = m.get("gate") or _new_gate()
+            ussa.gate_move(g, ussa.CANCELLED, by="gate", reason=f"duplicate_of:{dup}")
+            return {"gate": g, "status": "cancelled"}
+        _transact(m_ref, check)
+        raise HTTPException(409, "同じ発言を続けて送ったので、2つ目は取り消しました")
+    gate = _gate_claim(m_ref, role, (ussa.SOURCE_CONFIRMED, ussa.FAILED))
+    return _gate_run(t0, s_ref, session, mid, m_ref, msg, role, question, msgs, gate)
+
+
+def _gate_run(t0, s_ref, session, mid, m_ref, msg, role, question, msgs, gate, intent=None):
+    """USSA の本体。
+      1) Source Agent（意図と原文の枠）・Translation Agent（下書き）・Meaning Engine（患者の問診メモ）を並列に
+      2) 意図が決まらなければ、発言者に確認（AWAITING_INTENT_CLARIFICATION）。下書きの訳は使わない
+      3) Verification Engine。重要な不一致なら訳し直して TRANSLATION_RETRIES 回まで再検証
+      4) VERIFIED / AMBIGUOUS → Safety Gate（_deliver）。それ以外 → 発言者の確認（NEEDS_REVIEW）。自動では送らない
+      5) 送ったら: 問診メモ・答えの結びつけ・Conversation Auditor
+    """
+    run_id = gate["run_id"]
+    src_lang, dst_lang = _langs(session, role)
+    direction = "patient_to_doctor" if role == "patient" else "doctor_to_patient"
+    turns = _turns(msgs, mid)
+    timings = {}
+    q_ctx = ({"question_as_shown": question["translation"]["text"], "question": question["original"]}
+             if question and role == "patient" else None)
+    confirmed = intent.get("confirmed") if intent and intent["state"] == ussa.USER_CONFIRMED else None
+    ci = ({"meaning_speaker": confirmed["meaning_speaker"], "meaning_listener": confirmed.get("meaning_listener", "")}
+          if confirmed else None)
+    is_tb = bool(question and question.get("kind") == "teachback")
+    f_src = None if intent else unsaid_ai.submit(_timed, unsaid_ai.source_agent, msg["original"], role, src_lang,
+                                                 dst_lang, turns)
+    f_tr = unsaid_ai.submit(_draft, msg, src_lang, dst_lang, direction, q_ctx, turns, ci, None)
+    f_mean = f_tb = None
+    known = _known_quotes(msgs, mid)
+    if role == "patient" and not is_tb:
+        ctx = _context(msgs, mid) + ([{"speaker": "patient", "text": f"（本人が確認した意味）{ci['meaning_listener'] or ci['meaning_speaker']}"}]
+                                     if ci else [])
+        pending = None
+        if question and question.get("kind") == "clarify":
+            c = question.get("clarify") or {}
+            pending = {"source_quote": c.get("source_quote", ""), "question_doctor_lang": question["original"],
+                       "question_patient_lang": question["translation"]["text"], "unresolved": c.get("unresolved", "")}
+        f_mean = unsaid_ai.submit(unsaid_ai.meaning, msg["original"], src_lang, dst_lang, ctx, known, pending)
+    exp = dict(msgs).get(question["teachback"]["explanation_id"]) if is_tb else None
+    try:
+        # 1) 発話意図（Source Agent）
+        if intent is None:
+            try:
+                raw, timings["source_ms"] = f_src.result()
+                intent = ussa.build_intent(raw, source_text=msg["original"], speaker_lang=src_lang,
+                                           listener_lang=dst_lang, schema=unsaid_ai.schema("source"))
+            except Exception as e:
+                _gate_fail(m_ref, run_id, "source", e)
+        if is_tb:
+            f_tb = unsaid_ai.submit(unsaid_ai.compare_understanding, exp.get("original", ""),
+                                    (exp.get("translation") or {}).get("text", ""), msg["original"], src_lang, dst_lang,
+                                    ((exp.get("gate") or {}).get("intent") or {}).get("frame"))
+        if intent["state"] not in ussa.INTENT_OK:
+            def wait(m, g):
+                ussa.gate_move(g, ussa.AWAITING_INTENT, by="gate", reason=intent["state"])
+                g["intent"] = intent
+                g["timings"].update(timings)
+                return {"status": "awaiting_intent", "lockedUntil": firestore.DELETE_FIELD}
+            _gate_update(m_ref, run_id, wait)
+            log.info("gate awaiting intent (%s) %.1fs", intent["state"], time.time() - t0)
+            return {"status": "awaiting_intent", "intent": intent}
+        frame_intent = _confirmed_frame(intent) if confirmed else intent
+
+        # 2) 下書きの訳（Translation Agent）
+        try:
+            draft, timings["translate_ms"] = f_tr.result()
+        except Exception as e:
+            _gate_fail(m_ref, run_id, "translate", e)
+
+        def verifying(m, g):
+            ussa.gate_move(g, ussa.VERIFYING, by="gate")
+            g["intent"] = intent
+            return {"status": "analyzing"}
+        _gate_update(m_ref, run_id, verifying)
+
+        # 3) 検証（Verification Engine）。重要な不一致なら訳し直す（回数に上限）
+        attempts = []
+        for attempt in range(TRANSLATION_RETRIES + 1):
+            v = _verify(msg["original"], src_lang, draft["translation"], dst_lang, role, frame_intent, ci, timings,
+                        f"verify_ms_{attempt + 1}")
+            attempts.append({"translation": draft["translation"], "status": v["status"],
+                             "issues": [{k: i.get(k, "") for k in ("type", "strength", "layer", "detail")} for i in v["issues"]][:8]})
+            if v["status"] != ussa.MISMATCH or attempt == TRANSLATION_RETRIES:
+                break
+            fix = [{"type": i["type"], "detail": i["detail"]} for i in v["issues"] if i["strength"] == "strong"][:6]
+            try:
+                draft, timings[f"retranslate_ms_{attempt + 1}"] = _draft(msg, src_lang, dst_lang, direction, q_ctx,
+                                                                          turns, ci, fix)
+            except Exception as e:
+                log.warning("retranslate failed: %s", type(e).__name__)
+                break
+
+        # 4) 送る（Safety Gate）か、発言者の確認へ
+        meaning = _meaning_result(f_mean, msg, mid, session, known) if f_mean else None
+        tb_result = _teachback_result(f_tb, msg) if f_tb else None
+        extra = {}
+        if meaning is not None:
+            extra.update(meaning=meaning, facts=clinical.legacy_facts(meaning))
+        if tb_result is not None:
+            extra["teachback_result"] = tb_result
+        if v["status"] in (ussa.VERIFIED, ussa.AMBIGUOUS):
+            if extra:
+                m_ref.update(extra)  # 問診メモ・理解の比較は送る前に書いておく（送った瞬間に医師の画面にそろう）
+            t_gate = time.time()
+            try:
+                _deliver(s_ref, m_ref, run_id, role, verification=v, draft=draft, attempts=attempts,
+                         timings={**timings, "gate_ms": None}, session=session)
+            except _Refused as e:
+                _gate_fail(m_ref, run_id, f"gate_refused[{e}]", e)
+            timings["gate_ms"] = round((time.time() - t_gate) * 1000)
+            _after_send(s_ref, session, mid, role, intent, question)
+            log.info("gate sent role=%s verification=%s attempts=%d %.1fs", role, v["status"], len(attempts),
+                     time.time() - t0)
+            return {"status": "sent", "verification": v["status"], "attempts": len(attempts), "timings": timings}
+
+        def review(m, g):
+            ussa.gate_move(g, ussa.NEEDS_REVIEW, by="gate", reason=v["status"])
+            g["verification"], g["draft"], g["attempts"] = v, draft, attempts
+            g["timings"].update(timings)
+            return {"status": "needs_review", "lockedUntil": firestore.DELETE_FIELD, **extra}
+        _gate_update(m_ref, run_id, review)
+        log.info("gate needs review role=%s verification=%s %.1fs", role, v["status"], time.time() - t0)
+        return {"status": "needs_review", "verification": v["status"], "timings": timings}
+    except _Stop as e:
+        log.info("gate stopped: %s", e)
+        return {"status": "stopped", "reason": str(e)}
+
+
+def _teachback_result(future, msg):
+    try:
+        raw, sec = future.result()
+        raw.pop("_meta", None)
+        return clinical.build_teachback(raw, restatement=msg["original"], schema=unsaid_ai.schema("teachback"))
+    except Exception as e:
+        log.warning("teachback compare failed: %s", type(e).__name__)
+        return {"overall": "error", "points": [], "suggested_reexplanation": "", "rejected": 0,
+                "decided_by": "ai", "at": clinical.now_iso()}
+
+
+def _after_send(s_ref, session, mid, role, intent, question):
+    """送った後: 答えを元の情報に結びつけ、会話全体を見直す（Conversation Auditor）。失敗しても送った発言はそのまま。"""
+    try:
+        _apply_reply(s_ref, mid)
+    except Exception as e:
+        log.warning("apply_reply failed: %s", type(e).__name__)
+    try:
+        _audit(s_ref, mid, intent, question)
+    except Exception as e:
+        log.warning("audit failed: %s", type(e).__name__)
 
 
 def _answer_fixed(s_ref, session, mid, m_ref, msg, question):
-    """確認質問に選択肢・「分からない」・「どれでもない」で答えた: 訳はすでにあるので Gemini を呼ばず、そのまま送る。"""
+    """確認質問に選択肢・「分からない」・「どれでもない」で答えた: 訳は医師が送った質問の選択肢にあるので Gemini を呼ばない。
+    Safety Gate は通す（本人が選んだ＝意図は本人の確認、訳は用意された対訳＝PRETRANSLATED と記録する）。"""
     c, a = question["clarify"], msg["answer"]
     if a["type"] == "option":
         dr = c["options_doctor"][a["index"]]
@@ -553,47 +926,109 @@ def _answer_fixed(s_ref, session, mid, m_ref, msg, question):
     else:
         dr = unsaid_ai.ANSWER_FIXED_DOCTOR[a["type"]]
         res = {"applies": True, "resolves": "no", "meaning_doctor": "", "source_quote": "", "evidence_status": "none"}
-    update = {
-        "translation": {"lang": session["doctorLang"], "text": dr, "back_translation": msg["original"], "note": "",
-                        "clarified_target": "", "clarified_answer": ""},
-        "meaning": _empty_meaning(resolution=res),
-        "facts": [],
-        "clarification": None,
-        "status": "sent",  # 患者が自分で選んだ答え（訳は確認質問と一緒に医師が見ている）なので、逆翻訳の確認を省く
-        "sentAt": firestore.SERVER_TIMESTAMP,
-    }
-    m_ref.update({**update, "lockedUntil": firestore.DELETE_FIELD, "error": firestore.DELETE_FIELD})
-    _apply_reply(s_ref, mid)
-    return {**update, "sentAt": None}
+    g = msg.get("gate") or _new_gate()
+    run_id = g.get("run_id") or uuid.uuid4().hex[:12]
+    if g["state"] == ussa.SOURCE_CONFIRMED:
+        ussa.gate_move(g, ussa.ANALYZING, by="patient")
+    g.update(run_id=run_id, source_hash=ussa.source_hash(msg["original"]), run_started_at=ussa.now_iso(),
+             intent={"state": ussa.USER_CONFIRMED, "decided_by": "speaker", "speech_act": "answer",
+                     "interpretations": [], "frame": ussa.build_frame({"speech_act": "answer"}, msg["original"]),
+                     "confirmed": {"kind": "option", "meaning_speaker": msg["original"], "meaning_listener": dr}})
+    ussa.gate_move(g, ussa.VERIFYING, by="gate")
+    m_ref.update({"gate": g, "meaning": _empty_meaning(resolution=res), "facts": [], "clarification": None})
+    _deliver(s_ref, m_ref, run_id, "patient",
+             verification={"status": "PRETRANSLATED", "issues": [], "failures": [], "at": ussa.now_iso(),
+                           "note": "医師が送った確認質問の選択肢の対訳"},
+             draft={"translation": dr, "back_translation": msg["original"], "note": ""}, attempts=[], timings={},
+             session=session)
+    _after_send(s_ref, session, mid, "patient", None, question)
+    return {"status": "sent"}
 
 
-def _analyze_teachback_answer(t0, s_ref, session, mid, m_ref, msg, question, msgs):
-    """理解の確認への答え: 翻訳と「医師の説明との比べ」を並列に投げる。"""
-    exp = dict(msgs).get(question["teachback"]["explanation_id"]) or {}
-    tr_ctx = {"question_as_shown": question["translation"]["text"], "question": question["original"]}
-    f_tr = unsaid_ai.submit(_patient_translate, session, msg, None, tr_ctx)
-    f_cmp = unsaid_ai.submit(unsaid_ai.compare_understanding, exp.get("original", ""),
-                             (exp.get("translation") or {}).get("text", ""), msg["original"],
-                             session["patientLang"], session["doctorLang"])
+# ───────────────────────── Conversation Auditor ─────────────────────────
+def _utterances(msgs):
+    return {i: {"original": m.get("original", ""), "translation": (m.get("translation") or {}).get("text", ""),
+                "speaker": m.get("from")} for i, m in msgs if m.get("status") in SHOWN}
+
+
+def _audit_update(s_ref, fn):
+    """session の audit（未解決事項と記憶）をトランザクションで書き換える。端末は書けない（ルールの対象外の項目）。"""
+    def tx(datas):
+        sd = datas[0]
+        if not sd:
+            raise _Stop("deleted")
+        a = sd.get("audit") or ussa.empty_audit()
+        fn(a)
+        a["updated_at"] = ussa.now_iso()
+        return [{"audit": a}]
     try:
-        tr = f_tr.result()
-    except Exception as e:
-        _fail(m_ref, e)
-    update = {"clarification": None, "translation": tr, "status": "confirmed"}
-    m_ref.update({**update, "lockedUntil": firestore.DELETE_FIELD})
-    try:
-        raw, sec = f_cmp.result()
-        raw.pop("_meta", None)
-        result = clinical.build_teachback(raw, restatement=msg["original"], schema=unsaid_ai.schema("teachback"))
-        log.info("teachback %.1fs overall=%s points=%d", sec, result["overall"], len(result["points"]))
-    except Exception as e:
-        log.warning("teachback compare failed: %s", type(e).__name__)
-        result = {"overall": "error", "points": [], "suggested_reexplanation": "", "rejected": 0,
-                  "decided_by": "ai", "at": clinical.now_iso()}
-    m_ref.update({"teachback_result": result})
-    _apply_reply(s_ref, mid)
-    log.info("analyze teachback-answer total=%.1fs", time.time() - t0)
-    return {**update, "teachback_result": result}
+        _tx([s_ref], tx)
+    except _Stop:
+        pass
+
+
+def _audit(s_ref, mid, intent, question):
+    """送った発言1つ分の差分更新。会話全体ではなく、最新の発言・記憶（重要な発言の要点と枠）・未解決事項だけを使う。
+      ルール: 患者が説明を言い直した（confirm_understanding / 理解の確認への答え）ら、直前の医師の指示と数量・回数・時間帯を照合
+      LLM: 矛盾・理解の相違・未回答・説明不足などを、証拠（実在する引用）つきで提案。医師が片付けた事項は繰り返さない
+    """
+    t = time.time()
+    msgs = _all_messages(s_ref)
+    utter = _utterances(msgs)
+    m = dict(msgs).get(mid)
+    if not m or mid not in utter:
+        return
+    frame = (intent or {}).get("frame") or ussa.build_frame({}, m.get("original", ""))
+    item = ussa.memory_item(mid, m, frame)
+    sess = s_ref.get().to_dict() or {}
+    a0 = sess.get("audit") or ussa.empty_audit()
+    restated = m.get("from") == "patient" and (frame.get("speech_act") == "confirm_understanding"
+                                                or (question or {}).get("kind") == "teachback")
+    raw = None
+    if not (question and question.get("kind") == "clarify" and (m.get("answer") or {}).get("type") != "free_text"):
+        try:
+            raw, _ = unsaid_ai.audit(
+                {"utterance_id": mid, "speaker": m.get("from"), "text": item["text_doctor_lang"],
+                 "speech_act": frame.get("speech_act")},
+                a0["memory"],
+                [{k: i[k] for k in ("issue_id", "type", "description", "related_utterances")}
+                 for i in a0["issues"] if i["status"] in ussa.ACTIVE_ISSUE],
+                [{k: i[k] for k in ("type", "description", "related_utterances")}
+                 for i in a0["issues"] if i["status"] not in ussa.ACTIVE_ISSUE])
+            raw.pop("_meta", None)
+            clinical.validate(raw, unsaid_ai.schema("audit"))
+        except Exception as e:
+            log.warning("auditor call failed: %s", type(e).__name__)
+            raw = None
+
+    def fn(a):
+        if restated:
+            instr = next((x for x in reversed(a["memory"]) if x["speaker"] == "doctor"
+                          and x["speech_act"] in ("instruction", "request") and x["utterance_id"] in utter), None)
+            if instr:
+                diffs = ussa.cross_check({**ussa.build_frame({}, ""), **instr["frame"]}, frame)
+                if diffs:
+                    ussa.add_issue(a, itype="instruction_misunderstanding",
+                                   description="説明と患者の理解が違う可能性: " + "／".join(diffs),
+                                   related=[instr["utterance_id"], mid],
+                                   evidence=[{"utterance_id": mid, "field": "original", "quote": m["original"]}],
+                                   source="rule", severity="high")
+        if raw:
+            ussa.merge_audit(a, raw, latest_id=mid, utterances=utter)
+        ussa.remember(a, item)
+    _audit_update(s_ref, fn)
+    log.info("audit %.1fs", time.time() - t)
+
+
+def _issue_event(s_ref, issue_id, event, **kw):
+    def fn(a):
+        i = next((x for x in a["issues"] if x["issue_id"] == issue_id), None)
+        if i:
+            try:
+                ussa.issue_event(i, event, **kw)
+            except clinical.TransitionError:
+                pass
+    _audit_update(s_ref, fn)
 
 
 def _apply_reply(s_ref, aid):
@@ -610,6 +1045,8 @@ def _apply_reply(s_ref, aid):
     q = q_ref.get().to_dict() or {}
     a_type = (a.get("answer") or {}).get("type", "free_text")
 
+    if q.get("kind") == "clarify" and (q.get("clarify") or {}).get("issue_id"):
+        _issue_event(s_ref, q["clarify"]["issue_id"], "answered", ref=aid, note="確認質問に患者が答えた")
     if q.get("kind") == "clarify":
         mean = a.get("meaning") or {}
         if mean.get("status") != "ready":
@@ -661,6 +1098,16 @@ def _apply_reply(s_ref, aid):
                 return [None]
             return [{"teachback": tb}]
         _tx([q_ref], fn)
+        # 理解の相違は Conversation Auditor の未解決事項にも載せる（医師が「理解を確認済み」にすると解決になる）
+        if result and result.get("overall") in ("inconsistent", "partial", "unclear"):
+            exp_id = q["teachback"]["explanation_id"]
+            pts = [p for p in result["points"] if p["verdict"] != "match"]
+            ev = [{"utterance_id": aid, "field": "original", "quote": p["restatement_quote"]}
+                  for p in pts if p["restatement_quote"]] or [{"utterance_id": aid, "field": "original", "quote": a["original"]}]
+            desc = "理解の確認: " + "／".join(p["explanation"] or p["doctor_point"] for p in pts)[:280]
+            _audit_update(s_ref, lambda au: ussa.add_issue(
+                au, itype="understanding_mismatch", description=desc, related=[exp_id, aid], evidence=ev,
+                source="teachback", severity="high" if result["overall"] == "inconsistent" else "medium"))
 
 
 @app.post("/send")
@@ -764,10 +1211,13 @@ def clarify_send(body: ClarifySend, uid: str = Depends(current_uid)):
             "fixed": unsaid_ai.ANSWER_FIXED.get(session["patientLang"], unsaid_ai.ANSWER_FIXED["en"]),
             "edited": edited,
             "last_answer_id": "",
+            "issue_id": body.issueId or "",
         }))
         return updates
 
     _tx([src_ref] if src_ref else [], fn, create=(q_ref, doc))
+    if body.issueId:
+        _issue_event(s_ref, body.issueId, "question_sent", ref=q_ref.id)
     log.info("clarify sent edited=%s linked=%s", edited, bool(src_ref))
     return {"messageId": q_ref.id, "candidateId": doc["clarify"]["candidate_id"]}
 
@@ -820,7 +1270,7 @@ def fact_update(body: FactAction, uid: str = Depends(current_uid)):
 
 
 @app.post("/teachback/start")
-def teachback_start(ref: MessageRef, uid: str = Depends(current_uid)):
+def teachback_start(ref: TeachbackStart, uid: str = Depends(current_uid)):
     """医師が自分の説明（messageId）について「理解を確認」: 患者に、理解した内容を自分の言葉で話してもらう依頼を送る。
     依頼文は固定（unsaid_ai.TEACHBACK_PROMPT）なので Gemini は呼ばない。"""
     s_ref, session = _doctor_session(ref.sessionId, uid)
@@ -836,6 +1286,7 @@ def teachback_start(ref: MessageRef, uid: str = Depends(current_uid)):
                         shown=unsaid_ai.TEACHBACK_PROMPT.get(lang, unsaid_ai.TEACHBACK_PROMPT["en"]),
                         kind="teachback", extra={
                             "explanation_id": ref.messageId, "status": clinical.T_ASKED, "answer_message_id": "",
+                            "previous_id": ref.previousId or "",
                             "result": None, "history": [{"at": now, "by": "doctor", "event": "requested"}]})
     q_ref.set(doc)
     return {"messageId": q_ref.id}
@@ -851,6 +1302,8 @@ def teachback_resolve(body: TeachbackAction, uid: str = Depends(current_uid)):
     m_ref = _msg_ref(s_ref, body.messageId)
     _get(m_ref)
 
+    holder = {}
+
     def fn(datas):
         tb = (datas[0] or {}).get("teachback")
         if not tb:
@@ -859,8 +1312,30 @@ def teachback_resolve(body: TeachbackAction, uid: str = Depends(current_uid)):
             clinical.apply_teachback_event(tb, event, by="doctor")
         except clinical.TransitionError as e:
             raise HTTPException(409, str(e))
+        holder["tb"] = tb
         return [{"teachback": tb}]
     _tx([m_ref], fn)
+    # 未解決事項にも反映: 理解を確認済み → この説明（と再説明の前の説明）の理解の相違を解決に／再説明 → 確認を依頼中に
+    tb = holder["tb"]
+    ids = {tb.get("explanation_id"), tb.get("answer_message_id")} - {"", None}
+    prev = tb.get("previous_id")
+    if prev:
+        pt = (_msg_ref(s_ref, prev).get().to_dict() or {}).get("teachback") or {}
+        ids |= {pt.get("explanation_id"), pt.get("answer_message_id")} - {"", None}
+
+    def upd(a):
+        for i in a["issues"]:
+            if i["status"] in ussa.ACTIVE_ISSUE and i["type"] in ("understanding_mismatch", "instruction_misunderstanding") \
+                    and ids & set(i["related_utterances"]):
+                try:
+                    if body.action == "confirm":
+                        ussa.issue_event(i, "resolve", ref=body.messageId, note="医師が理解を確認")
+                        i["resolution"] = "医師が理解を確認"
+                    else:
+                        ussa.issue_event(i, "question_sent", ref=body.messageId, note="医師が再説明")
+                except clinical.TransitionError:
+                    pass
+    _audit_update(s_ref, upd)
     return {"ok": True}
 
 
@@ -877,6 +1352,136 @@ def meaning_retry(ref: MessageRef, uid: str = Depends(current_uid)):
     meaning = _meaning_result(f, msg, ref.messageId, session, known)
     m_ref.update({"meaning": meaning, "facts": clinical.legacy_facts(meaning)})
     return {"status": meaning["status"]}
+
+
+# ───────────────────────── 発言者の確認（意図・検証で食い違ったとき）・取り消し・未検証の共有・未解決事項 ─────────────────────────
+def _author(s_ref, session, uid, message_id):
+    role = _role(session, uid)
+    m_ref = _msg_ref(s_ref, message_id)
+    msg = _get(m_ref)
+    if not role or msg.get("from") != role:
+        raise HTTPException(403, "発言者だけが操作できます")
+    return role, m_ref, msg
+
+
+def _cancel(m_ref, by, reason, allowed):
+    def check(m):
+        g = m.get("gate") or _new_gate()
+        if g["state"] not in allowed:
+            raise HTTPException(409, f"送信の状態が {g['state']} なので取り消せません")
+        ussa.gate_move(g, ussa.CANCELLED, by=by, reason=reason)
+        return {"gate": g, "status": "cancelled", "lockedUntil": firestore.DELETE_FIELD}
+    _transact(m_ref, check)
+
+
+@app.post("/intent")
+def intent_choose(body: IntentChoice, uid: str = Depends(current_uid)):
+    """発言者が自分の発言の意味を選んだ・説明した（Translation Intent Clarification）。USER_CONFIRMED として訳し直し、検証して送る。
+    「どれでもない」は取り消し（端末は原文を入力欄に戻し、言い直してもらう）。"""
+    t0 = time.time()
+    s_ref, session = _session(body.sessionId, uid)
+    role, m_ref, msg = _author(s_ref, session, uid, body.messageId)
+    g = msg.get("gate") or {}
+    if g.get("state") != ussa.AWAITING_INTENT:
+        raise HTTPException(409, "意図の確認を待っている発言ではありません")
+    if body.choice == "none":
+        _cancel(m_ref, role, "rephrase", {ussa.AWAITING_INTENT})
+        return {"status": "cancelled", "original": msg["original"]}
+    try:
+        intent = ussa.confirm_intent(g["intent"], body.choice, body.text)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    gate = _gate_claim(m_ref, role, (ussa.AWAITING_INTENT,), intent=intent)
+    msgs = _all_messages(s_ref)
+    question = dict(msgs).get(msg.get("replyTo")) if msg.get("replyTo") else None
+    return _gate_run(t0, s_ref, session, body.messageId, m_ref, msg, role, question, msgs, gate, intent=intent)
+
+
+@app.post("/review")
+def review(body: ReviewAction, uid: str = Depends(current_uid)):
+    """検証で食い違いが残った発言（NEEDS_REVIEW）を、発言者が「未検証として送る」か「言い直す」。
+    未検証として送った訳は、相手の画面に「未検証」と出る（確定した翻訳としては扱わない）。"""
+    s_ref, session = _member_session(body.sessionId, uid)
+    role, m_ref, msg = _author(s_ref, session, uid, body.messageId)
+    g = msg.get("gate") or {}
+    if g.get("state") != ussa.NEEDS_REVIEW:
+        raise HTTPException(409, "確認を待っている発言ではありません")
+    if body.action == "rephrase":
+        _cancel(m_ref, role, "rephrase", {ussa.NEEDS_REVIEW})
+        return {"status": "cancelled", "original": msg["original"]}
+    if body.action != "send_unverified":
+        raise HTTPException(400, "action は send_unverified / rephrase のどちらかです")
+    try:
+        _deliver(s_ref, m_ref, g["run_id"], role, verification=g["verification"], draft=g["draft"],
+                 attempts=g.get("attempts", []), timings={}, session=session, override="speaker_ack")
+    except (_Stop, _Refused) as e:
+        raise HTTPException(409, f"送れません（{e}）") from None
+    msgs = _all_messages(s_ref)
+    question = dict(msgs).get(msg.get("replyTo")) if msg.get("replyTo") else None
+    _after_send(s_ref, session, body.messageId, role, g.get("intent"), question)
+    return {"status": "sent", "override": "speaker_ack"}
+
+
+@app.post("/cancel")
+def cancel(ref: MessageRef, uid: str = Depends(current_uid)):
+    """発言者が送信を取り消す（解析中・意図の確認中・検証の確認中・失敗）。解析が後から終わっても送られない（run_id が合わない）。"""
+    s_ref, session = _member_session(ref.sessionId, uid)
+    role, m_ref, msg = _author(s_ref, session, uid, ref.messageId)
+    _cancel(m_ref, role, "speaker",
+            {ussa.SOURCE_CONFIRMED, ussa.ANALYZING, ussa.VERIFYING, ussa.AWAITING_INTENT, ussa.NEEDS_REVIEW, ussa.FAILED})
+    return {"status": "cancelled", "original": msg["original"]}
+
+
+@app.post("/reveal")
+def reveal(ref: MessageRef, uid: str = Depends(current_uid)):
+    """医師が、まだ送られていない（確認中・検証中・失敗した）患者の発言を、未検証と分かる形で見る。見たことを記録する。
+    AI の確認が終わるまで重要な訴えを医師から完全に隠さないため。推測の訳は「未検証」として返し、問診メモには入れない。"""
+    s_ref, session = _doctor_session(ref.sessionId, uid)
+    m_ref = _msg_ref(s_ref, ref.messageId)
+    msg = _get(m_ref)
+    if msg.get("from") != "patient" or msg.get("status") in SHOWN:
+        raise HTTPException(400, "まだ届いていない患者の発言だけです")
+
+    def check(m):
+        g = m.get("gate") or _new_gate()
+        g.setdefault("revealed", []).append({"at": ussa.now_iso(), "by": "doctor", "state": g.get("state")})
+        return {"gate": g}
+    _transact(m_ref, check)
+    g = msg.get("gate") or {}
+    return {"original": msg["original"], "lang": session["patientLang"], "state": g.get("state", ussa.SOURCE_CONFIRMED),
+            "verified": False, "draft": (g.get("draft") or {}).get("translation", ""),
+            "verification": (g.get("verification") or {}).get("status", "")}
+
+
+@app.post("/issue/update")
+def issue_update(body: IssueAction, uid: str = Depends(current_uid)):
+    """医師が未解決事項を保留・解決済み・無視・戻す。AI の提案は強制しない（無視してよい）。"""
+    s_ref, _ = _doctor_session(body.sessionId, uid)
+    if body.action not in ("hold", "unhold", "resolve", "dismiss", "reopen"):
+        raise HTTPException(400, "action は hold / unhold / resolve / dismiss / reopen のどれかです")
+    holder = {}
+
+    def tx(datas):
+        a = (datas[0] or {}).get("audit") or ussa.empty_audit()
+        i = next((x for x in a["issues"] if x["issue_id"] == body.issueId), None)
+        if i is None:
+            raise HTTPException(404, "未解決事項がありません")
+        if body.action in ("hold", "unhold"):
+            if i["status"] not in ussa.ACTIVE_ISSUE:
+                raise HTTPException(409, "閉じた事項は保留にできません")
+            i["held"] = body.action == "hold"
+            i.setdefault("history", []).append({"at": ussa.now_iso(), "by": "doctor", "event": body.action})
+        else:
+            try:
+                ussa.issue_event(i, body.action, note=body.note)
+            except clinical.TransitionError as e:
+                raise HTTPException(409, str(e)) from None
+            if body.action == "resolve":
+                i["resolution"] = body.note[:200] or "医師が解決済みにした"
+        holder["issue"] = i
+        return [{"audit": a}]
+    _tx([s_ref], tx)
+    return {"ok": True, "status": holder["issue"]["status"]}
 
 
 @app.post("/end")
