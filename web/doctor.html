@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>UNSAID 医師</title>
+<title>Kumu 医師</title>
 <link rel="stylesheet" href="./app.css">
 </head>
 <body>
@@ -33,7 +33,7 @@ const fail = (e) => { if (S.ending) return; console.error(e); toast("失敗し�
 // ── 開始画面と QR ──
 function startScreen() {
   app.replaceChildren(h("section", { class: "d-start" },
-    h("h1", {}, "UNSAID"),
+    h("h1", {}, "Kumu"),
     h("p", {}, "患者さんのスマホで QR を読み取ってもらいます"),
     h("button", { class: "btn-primary", onclick: begin }, "問診を始める")));
 }
@@ -195,7 +195,7 @@ function memoText() {
   if (!count) return "";
   const mark = (it) => `${it.negated ? "（なし）" : ""}${it.uncertain ? "（あいまい）" : ""}${it.confirmed ? "（本人確認済み）" : ""}`;
   const lang = LANG_NAME[S.session?.patientLang] ?? S.session?.patientLang ?? "";
-  const lines = [`【問診メモ（UNSAID・${lang}話者・${new Date().toLocaleDateString("ja-JP")}）】`];
+  const lines = [`【問診メモ（Kumu・${lang}話者・${new Date().toLocaleDateString("ja-JP")}）】`];
   if (symptoms.length) {
     lines.push(`${LABEL.symptom}:`);
     for (const sy of symptoms) {

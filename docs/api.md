@@ -1,4 +1,4 @@
-# UNSAID API（Cloud Run）と画面側の約束
+# Kumu API（Cloud Run）と画面側の約束
 
 画面（Yusei）が知っておくことは「Firestore に発言を作る → その id で API を呼ぶ → あとは onSnapshot で待つ」だけ。
 API のレスポンスを使わなくても、結果は同じメッセージに書き戻されるので画面は勝手に更新される。

@@ -1,4 +1,4 @@
-// UNSAID の画面と裏側（Firebase + Cloud Run）をつなぐ部品。画面はこのファイルの関数だけを呼べばよい。
+// Kumu の画面と裏側（Firebase + Cloud Run）をつなぐ部品。画面はこのファイルの関数だけを呼べばよい。
 // 中身は docs/api.md の約束そのまま。つなぎ方の手順は docs/connect-ui.md。
 //
 //   import * as unsaid from "./unsaid.js";
