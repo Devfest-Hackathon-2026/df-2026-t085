@@ -192,12 +192,96 @@ def render(pairs):
                              f'<body>{s}</body></html>')
             page.evaluate("document.fonts.ready")
             page.wait_for_timeout(600)
+            (OUT / f"{name}.png").parent.mkdir(parents=True, exist_ok=True)
             page.screenshot(path=str(OUT / f"{name}.png"), clip={"x": 0, "y": 0, "width": W, "height": H})
             print(f"  {name}.svg / .png")
         b.close()
 
 
+
+
+# ───────────── 4. 評価の図（eval/compare_results.json・eval/live_verify_repeat.json から。分母と条件を必ず書く）─────────────
+METHODS = [("A", "通常の翻訳"), ("B", "＋意図の解析"), ("C", "＋意味の照合"), ("D", "UNSAID 完全版")]
+
+
+def _bar_chart(title, sub, values, denom, unit, note, better="少ないほど安全", fmt=None, colors=None):
+    """縦棒 1 系列。values: {A: 数}。分母（件）か単位（秒）を目盛りに。"""
+    x0, y0, cw, ch = 220, 250, 1500, 560
+    import math
+    vmax = denom if denom else max(5, math.ceil(max(values.values()) * 1.1 / 5) * 5)
+    bw, gap = 220, (cw - 4 * 220) / 4
+    b = [text(80, 92, title, 38, 700), text(80, 140, sub, 22, 400, C["sub"]),
+         text(1840, 92, better, 20, 700, C["faint"], "end")]
+    steps = 4 if denom else 5  # 目盛り（うすく）。件数は 0 と分母だけ数字を書く（端数の目盛りを出さない）
+    for i in range(steps + 1):
+        v = vmax * i / steps
+        y = y0 + ch - ch * i / steps
+        b.append(f'<line x1="{x0}" y1="{y}" x2="{x0 + cw}" y2="{y}" stroke="{C["line"]}" stroke-width="1"/>')
+        if not denom or i in (0, steps):
+            b.append(text(x0 - 16, y + 7, f"{v:g}" + ("" if denom else unit), 18, 400, C["faint"], "end"))
+    for i, (k, name) in enumerate(METHODS):
+        v = values[k]
+        h = 0 if vmax == 0 else ch * v / vmax
+        x = x0 + gap / 2 + i * (bw + gap)
+        col = (colors or {}).get(k, C["accent"])
+        if h > 0:
+            b.append(f'<path d="M{x},{y0 + ch} V{y0 + ch - h + 4} q0,-4 4,-4 H{x + bw - 4} q4,0 4,4 V{y0 + ch} Z" fill="{col}"/>')
+        label = fmt(v) if fmt else (f"{v} / {denom}" if denom else f"{v:.1f}{unit}")
+        b.append(text(x + bw / 2, y0 + ch - h - 14, label, 28, 700, C["ink"], "middle"))
+        b.append(text(x + bw / 2, y0 + ch + 44, f"{k}  {name}", 22, 700, C["ink"], "middle"))
+    b.append(f'<line x1="{x0}" y1="{y0 + ch}" x2="{x0 + cw}" y2="{y0 + ch}" stroke="{C["sub"]}" stroke-width="2"/>')
+    b.append(lines(80, 920, note, 19, fill=C["faint"]))
+    return svg("".join(b))
+
+
+def charts():
+    cmp = json.loads((ROOT / "eval/compare_results.json").read_text(encoding="utf-8"))
+    meta = cmp["meta"]
+    cond = f"本物の Gemini（{meta['model']}・{meta['location']}、評価用のプロジェクト）・{meta['started']}・架空の症例・正解は開発チームが事前に決めた"
+    pr = [r for r in cmp["precision"] if "injected" in r]
+    inj = len(pr)
+    missed = {k: inj if k in "AB" else sum(r["injected"]["corrupted"] in ("VERIFIED", "AMBIGUOUS") for r in pr) for k, _ in METHODS}
+    it = cmp["intent"]
+    need = [r for r in it if r["expect"] == "clarify"]
+    nn = [r for r in it if r["expect"] == "resolved"]
+    unconf = {k: sum((not r[k]["asked"]) and bool(r[k]["translation"]) for r in need) for k, _ in METHODS}
+    unneeded = {k: sum(r[k]["asked"] for r in nn) for k, _ in METHODS}
+
+    def pct(k, q):
+        import statistics
+        xs = sorted(r[k]["ms"] for r in it + cmp["precision"] if k in r and "ms" in r[k])
+        return statistics.median(xs) / 1000 if q == 50 else statistics.quantiles(xs, n=100)[94] / 1000
+    out = [
+        ("charts/chart-missed-errors", _bar_chart(
+            "誤りを入れた訳を、そのまま届けた件数", f"否定・数量・条件・回数・日時などの誤りを 1 つ入れた訳 {inj} 件（各方式で同じ訳）",
+            missed, inj, "", ["A・B は訳を照合しないので、誤りはすべてそのまま届く（仕組みの上で 100%）。", cond])),
+        ("charts/chart-unconfirmed-send", _bar_chart(
+            "意味が未確認のまま届けた件数", f"文脈で意味が決まらず、本人に確かめるべき発言 {len(need)} 件（「大丈夫です」「没事」「嗯」など）",
+            unconf, len(need), "", ["検出率ではなく「確かめずに訳して届けた」件数。", cond])),
+        ("charts/chart-unneeded-questions", _bar_chart(
+            "必要のない確認をした件数", f"文脈で意味が決まる発言 {len(nn)} 件で、発言者に聞き返した件数",
+            unneeded, len(nn), "", ["0 が良い（聞きすぎると診察の時間を使う）。", cond], better="少ないほど負担が小さい")),
+        ("charts/chart-latency", _bar_chart(
+            "送信から届くまでの時間（中央値）", "意図の解析と下書きの訳（並列）＋照合（＋訳し直し）の合計。p95 は下に記載",
+            {k: pct(k, 50) for k, _ in METHODS}, None, " 秒",
+            ["p95: " + "、".join(f"{k} {pct(k, 95):.1f} 秒" for k, _ in METHODS) + "。評価用のプロジェクトは割り当てが小さく、混雑（429）の再試行を含む。",
+             cond], better="短いほど速い", fmt=lambda v: f"{v:.1f} 秒")),
+    ]
+    rows = [["指標", "分母", *[k for k, _ in METHODS]],
+            ["誤りを入れた訳をそのまま届けた", inj, *[missed[k] for k, _ in METHODS]],
+            ["意味が未確認のまま届けた", len(need), *[unconf[k] for k, _ in METHODS]],
+            ["必要のない確認", len(nn), *[unneeded[k] for k, _ in METHODS]],
+            ["時間 p50（秒）", "—", *[f"{pct(k, 50):.1f}" for k, _ in METHODS]],
+            ["時間 p95（秒）", "—", *[f"{pct(k, 95):.1f}" for k, _ in METHODS]]]
+    (OUT / "charts").mkdir(parents=True, exist_ok=True)
+    (OUT / "charts" / "summary.csv").write_text("\n".join(",".join(map(str, r)) for r in rows) + "\n", encoding="utf-8")
+    (OUT / "charts" / "summary.md").write_text(
+        "| " + " | ".join(map(str, rows[0])) + " |\n|" + "---|" * len(rows[0]) + "\n"
+        + "\n".join("| " + " | ".join(map(str, r)) + " |" for r in rows[1:]) + f"\n\n{cond}\n", encoding="utf-8")
+    return out
+
+
 if __name__ == "__main__":
     OUT.mkdir(parents=True, exist_ok=True)
     render([("architecture-overview", architecture()), ("05-semantic-verification", verification()),
-            ("03x-intent-context", intent_context())])
+            ("03x-intent-context", intent_context()), *charts()])

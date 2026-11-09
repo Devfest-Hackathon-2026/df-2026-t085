@@ -387,3 +387,12 @@ def test_rejected_amount_rule_is_the_same_for_source_and_translation_frames():
     rule = [ln for ln in (root / "prompts/source_system.txt").read_text(encoding="utf-8").splitlines()
             if "Only amounts the text" in ln or "morning and one at night" in ln]
     assert len(rule) == 2 and all(ln in (root / "prompts/frame_system.txt").read_text(encoding="utf-8") for ln in rule)
+
+
+def test_now_is_not_today_rule_is_the_same_for_source_and_translation_frames():
+    """「今も・现在」を日付「今日」にしない、の規則が A と B で同じ。日付にすると、正しい訳を「日時が違う」で止める
+    （本物の Gemini で「今は痛みはありますか？」を 3/3 止めた。eval/live_now_check.py）。"""
+    root = Path(__file__).resolve().parent.parent
+    rule = [ln for ln in (root / "prompts/source_system.txt").read_text(encoding="utf-8").splitlines()
+            if "is not a date" in ln or "when the text names the day" in ln]
+    assert len(rule) == 2 and all(ln in (root / "prompts/frame_system.txt").read_text(encoding="utf-8") for ln in rule)

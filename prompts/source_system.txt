@@ -60,6 +60,8 @@ Fill only what the text itself says. Unknown stays unknown: "none", "unknown", "
 - times: kind + normalized value. relative_day: "day+0" today, "day+1" tomorrow, "day-1" yesterday.
   relative_week: "week+0" this week, "week+1" next week, "week-1" last week. weekday: "1" Monday ... "7" Sunday.
   clock: "HH:MM" 24h. date: "MM-DD". duration: ISO 8601 ("P3D", "P2W", "PT30M"). part_of_day: morning | noon | afternoon | evening | night | bedtime.
+  "Now" / "still" / "currently" (今・今も・今は・现在・还・now) is not a date: do not add a time for it. Use "day+0" only
+  when the text names the day ("today", 今日, 今天, hôm nay).
 - quantities: amounts with a unit (value as a number, "half" = 0.5): unit in tablet | capsule | mg | g | ml | drop | pack |
   times | day | week | month | hour | minute | celsius | year | other; of = English concept. Do not put frequencies here.
   Only amounts the text asks for or reports. An amount the text rejects or corrects ("not two at once, one in the

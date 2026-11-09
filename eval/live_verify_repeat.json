@@ -7,424 +7,422 @@
    "VERIFIED",
    "MISMATCH",
    [],
-   4217
+   3540
   ],
   [
    "p-dose-freq",
    "VERIFIED",
    "MISMATCH",
    [],
-   4661
+   3737
   ],
   [
    "p-dose-freq",
    "VERIFIED",
    "MISMATCH",
    [],
-   4509
+   3832
   ],
   [
    "p-not-empty",
    "VERIFIED",
    "MISMATCH",
    [],
-   13144
+   2946
   ],
   [
    "p-not-empty",
    "VERIFIED",
    "MISMATCH",
    [],
-   16185
+   6695
   ],
   [
    "p-not-empty",
    "VERIFIED",
    "MISMATCH",
    [],
-   3151
+   2381
   ],
   [
    "p-fast-8h",
    "VERIFIED",
    "MISMATCH",
    [],
-   5825
+   5447
   ],
   [
    "p-fast-8h",
    "VERIFIED",
    "MISMATCH",
    [],
-   5653
+   9024
   ],
   [
    "p-fast-8h",
    "VERIFIED",
    "MISMATCH",
    [],
-   5872
+   5361
   ],
   [
    "p-today",
    "VERIFIED",
    "MISMATCH",
    [],
-   3035
+   4490
   ],
   [
    "p-today",
    "VERIFIED",
    "MISMATCH",
    [],
-   2495
+   5126
   ],
   [
    "p-today",
    "VERIFIED",
    "MISMATCH",
    [],
-   5566
+   3872
   ],
   [
    "p-next-monday",
    "VERIFIED",
    "MISMATCH",
    [],
-   3449
+   3004
   ],
   [
    "p-next-monday",
    "VERIFIED",
    "MISMATCH",
    [],
-   3169
+   4691
   ],
   [
    "p-next-monday",
    "VERIFIED",
    "MISMATCH",
    [],
-   2669
+   2679
   ],
   [
    "p-swap",
    "VERIFIED",
    "MISMATCH",
    [],
-   7083
+   3720
   ],
   [
    "p-swap",
    "VERIFIED",
    "MISMATCH",
    [],
-   8081
+   7680
   ],
   [
    "p-swap",
+   "MISMATCH",
+   "MISMATCH",
+   [
+    "frame:polarity_flip"
+   ],
+   3245
+  ],
+  [
+   "p-mg",
+   "VERIFIED",
+   "MISMATCH",
+   [],
+   3866
+  ],
+  [
+   "p-mg",
+   "VERIFIED",
+   "MISMATCH",
+   [],
+   4280
+  ],
+  [
+   "p-mg",
+   "VERIFIED",
+   "MISMATCH",
+   [],
+   5177
+  ],
+  [
+   "p-fever-cond",
+   "VERIFIED",
+   "MISMATCH",
+   [],
+   3254
+  ],
+  [
+   "p-fever-cond",
+   "VERIFIED",
+   "MISMATCH",
+   [],
+   3341
+  ],
+  [
+   "p-fever-cond",
+   "VERIFIED",
+   "MISMATCH",
+   [],
+   3160
+  ],
+  [
+   "p-pain-cond",
    "VERIFIED",
    "MISMATCH",
    [],
    3446
   ],
   [
-   "p-mg",
+   "p-pain-cond",
    "VERIFIED",
    "MISMATCH",
    [],
-   2970
-  ],
-  [
-   "p-mg",
-   "VERIFIED",
-   "MISMATCH",
-   [],
-   3294
-  ],
-  [
-   "p-mg",
-   "VERIFIED",
-   "MISMATCH",
-   [],
-   3615
-  ],
-  [
-   "p-fever-cond",
-   "VERIFIED",
-   "MISMATCH",
-   [],
-   3760
-  ],
-  [
-   "p-fever-cond",
-   "VERIFIED",
-   "MISMATCH",
-   [],
-   3738
-  ],
-  [
-   "p-fever-cond",
-   "VERIFIED",
-   "MISMATCH",
-   [],
-   4720
+   3205
   ],
   [
    "p-pain-cond",
    "VERIFIED",
    "MISMATCH",
    [],
-   2860
-  ],
-  [
-   "p-pain-cond",
-   "VERIFIED",
-   "MISMATCH",
-   [],
-   4122
-  ],
-  [
-   "p-pain-cond",
-   "VERIFIED",
-   "MISMATCH",
-   [],
-   2658
+   2643
   ],
   [
    "p-clock",
    "VERIFIED",
    "MISMATCH",
    [],
-   2728
+   4108
   ],
   [
    "p-clock",
    "VERIFIED",
    "MISMATCH",
    [],
-   3157
+   4142
   ],
   [
    "p-clock",
    "VERIFIED",
    "MISMATCH",
    [],
-   3103
+   4038
   ],
   [
    "p-once",
    "VERIFIED",
    "MISMATCH",
    [],
-   5022
+   3006
   ],
   [
    "p-once",
    "VERIFIED",
    "MISMATCH",
    [],
-   3638
+   3239
   ],
   [
    "p-once",
+   "VERIFIED",
    "MISMATCH",
-   "MISMATCH",
-   [
-    "frame:condition_missing"
-   ],
-   5116
+   [],
+   3207
   ],
   [
    "p-alcohol",
    "VERIFIED",
    "MISMATCH",
    [],
-   3289
+   3249
   ],
   [
    "p-alcohol",
    "VERIFIED",
    "MISMATCH",
    [],
-   13135
+   2640
   ],
   [
    "p-alcohol",
    "VERIFIED",
    "MISMATCH",
    [],
-   5839
+   3012
   ],
   [
    "p-nofever",
    "VERIFIED",
    "MISMATCH",
    [],
-   2534
+   2909
   ],
   [
    "p-nofever",
    "VERIFIED",
    "MISMATCH",
    [],
-   2720
+   3034
   ],
   [
    "p-nofever",
    "VERIFIED",
    "MISMATCH",
    [],
-   3664
+   3100
   ],
   [
    "p-allergy",
    "VERIFIED",
    "MISMATCH",
    [],
-   3294
+   2370
   ],
   [
    "p-allergy",
    "VERIFIED",
    "MISMATCH",
    [],
-   2951
+   2523
   ],
   [
    "p-allergy",
    "VERIFIED",
    "MISMATCH",
    [],
-   3086
+   2591
   ],
   [
    "p-two-pills",
    "VERIFIED",
    "MISMATCH",
    [],
-   2576
+   2938
   ],
   [
    "p-two-pills",
    "VERIFIED",
    "MISMATCH",
    [],
-   3295
+   3494
   ],
   [
    "p-two-pills",
    "VERIFIED",
    "MISMATCH",
    [],
-   3198
+   3393
   ],
   [
    "p-yesterday",
    "VERIFIED",
    "MISMATCH",
    [],
-   2981
+   2756
   ],
   [
    "p-yesterday",
+   "VERIFIED",
+   "MISMATCH",
+   [],
+   4183
+  ],
+  [
+   "p-yesterday",
+   "VERIFIED",
+   "MISMATCH",
+   [],
+   3163
+  ],
+  [
+   "p-pregnant",
+   "VERIFIED",
+   "MISMATCH",
+   [],
+   2749
+  ],
+  [
+   "p-pregnant",
+   "VERIFIED",
+   "MISMATCH",
+   [],
+   3093
+  ],
+  [
+   "p-pregnant",
+   "VERIFIED",
+   "MISMATCH",
+   [],
+   3701
+  ],
+  [
+   "p-vi-two",
+   "VERIFIED",
+   "MISMATCH",
+   [],
+   18089
+  ],
+  [
+   "p-vi-two",
+   "VERIFIED",
+   "MISMATCH",
+   [],
+   2697
+  ],
+  [
+   "p-vi-two",
+   "VERIFIED",
+   "MISMATCH",
+   [],
+   12856
+  ],
+  [
+   "p-monday",
+   "VERIFIED",
+   "MISMATCH",
+   [],
+   3579
+  ],
+  [
+   "p-monday",
    "VERIFIED",
    "MISMATCH",
    [],
    3269
   ],
   [
-   "p-yesterday",
-   "VERIFIED",
-   "MISMATCH",
-   [],
-   3340
-  ],
-  [
-   "p-pregnant",
-   "VERIFIED",
-   "MISMATCH",
-   [],
-   5267
-  ],
-  [
-   "p-pregnant",
-   "VERIFIED",
-   "MISMATCH",
-   [],
-   3956
-  ],
-  [
-   "p-pregnant",
-   "VERIFIED",
-   "MISMATCH",
-   [],
-   2194
-  ],
-  [
-   "p-vi-two",
-   "VERIFIED",
-   "MISMATCH",
-   [],
-   2604
-  ],
-  [
-   "p-vi-two",
-   "VERIFIED",
-   "MISMATCH",
-   [],
-   3381
-  ],
-  [
-   "p-vi-two",
-   "VERIFIED",
-   "MISMATCH",
-   [],
-   7603
-  ],
-  [
    "p-monday",
    "VERIFIED",
    "MISMATCH",
    [],
-   3023
-  ],
-  [
-   "p-monday",
-   "VERIFIED",
-   "MISMATCH",
-   [],
-   4608
-  ],
-  [
-   "p-monday",
-   "MISMATCH",
-   "MISMATCH",
-   [
-    "frame:condition_missing"
-   ],
-   3459
+   2645
   ],
   [
    "p-bp",
    "VERIFIED",
    "MISMATCH",
    [],
-   3208
+   3743
   ],
   [
    "p-bp",
    "VERIFIED",
    "MISMATCH",
    [],
-   3238
+   3298
   ],
   [
    "p-bp",
    "VERIFIED",
    "MISMATCH",
    [],
-   3485
+   3711
   ]
  ]
 }

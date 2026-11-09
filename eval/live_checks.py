@@ -92,7 +92,8 @@ def run():
     mid, m, code, ms = s.say("doctor", "この薬は1日2回、朝と夜に1錠ずつ飲んでください。")
     b = brief(m)
     rec("医師→患者の翻訳", "検証済みで届く・数（2回・1錠）と時間帯（朝・夜）が残る",
-        b["status"] == "sent" and all(w in b["translation"] for w in ("两", "早", "晚")),
+        b["status"] == "sent" and any(w in b["translation"] for w in ("两次", "2次", "二次")) and "早" in b["translation"]
+        and "晚" in b["translation"] and any(w in b["translation"] for w in ("一片", "1片")),
         summary=f"{b['status']} {b['verification']} 「{b['translation']}」", ms=ms, **b)
 
     # 2. 患者 → 医師の翻訳

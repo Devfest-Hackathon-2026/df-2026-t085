@@ -1,0 +1,363 @@
+{
+ "captured_at": "2026-11-10 04:52 JST",
+ "scenario": "supplementary",
+ "ai": "live",
+ "ai_note": "本物の Gemini（評価用のプロジェクト kumu-devfest-2026）。Firestore はメモリ上の偽物",
+ "inputs": {
+  "lossy": "検査の前は8時間何も食べないでください。",
+  "lossy_rephrase": "検査を受ける前の8時間は、何も食べないでください。",
+  "pt_lossy": "我对青霉素过敏。",
+  "pt_rephrase": "我对青霉素有过敏反应。",
+  "offer": "痛み止めの注射をしましょうか？",
+  "fine": "没事。"
+ },
+ "failed_at": null,
+ "page_errors": [
+  "patient console: Failed to load resource: the server responded with a status of 403 (Forbidden)",
+  "patient console: Failed to load resource: the server responded with a status of 403 (Forbidden)"
+ ],
+ "size_mismatch": [],
+ "notes": [],
+ "shots": [
+  {
+   "no": 0,
+   "file": "00-doctor-start.png",
+   "device": "doctor",
+   "action": "医師がアプリを開いた直後",
+   "state": "入力前（問診の開始前）",
+   "info": "「問診を始める」だけがある",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 1,
+   "file": "01-doctor-qr.png",
+   "device": "doctor",
+   "action": "「問診を始める」を押した",
+   "state": "QR を表示（患者の参加待ち）",
+   "info": "患者がスマホで読む QR と説明",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 2,
+   "file": "02-patient-join-language.png",
+   "device": "patient",
+   "action": "QR のリンクを開いた",
+   "state": "参加前（言語の選択）",
+   "info": "患者の言語を選ぶ",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 3,
+   "file": "03-patient-consent.png",
+   "device": "patient",
+   "action": "中文を選んだ",
+   "state": "同意前",
+   "info": "AI で訳すこと・間違えうること・診断しないこと・終わったら消えること",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 4,
+   "file": "04-patient-connected.png",
+   "device": "patient",
+   "action": "「同意并开始」を押した",
+   "state": "接続済み・入力前",
+   "info": "話す画面（マイクと入力欄）",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 5,
+   "file": "05-doctor-connected.png",
+   "device": "doctor",
+   "action": "患者が参加した",
+   "state": "接続済み・入力前",
+   "info": "QR が閉じ、「患者（中国語）と接続中」",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 6,
+   "file": "06-doctor-lossy-typed.png",
+   "device": "doctor",
+   "action": "医師が説明（訳に人工的な誤りを注入）を入力（まだ送らない）",
+   "state": "入力済み・未送信",
+   "info": "検査の前は8時間何も食べないでください。",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 7,
+   "file": "07-doctor-lossy-checking.png",
+   "device": "doctor",
+   "action": "「送る」を押した直後",
+   "state": "処理中（意図の解析・翻訳・照合）",
+   "info": "医師の発言は「確認中…／訳を照合中…」。患者にはまだ届いていない",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 8,
+   "file": "08-doctor-lossy-review.png",
+   "device": "doctor",
+   "action": "照合で相違（人工的に注入した誤訳）",
+   "state": "送信保留（医師の確認待ち）",
+   "info": "どこが違うか・患者にはまだ届いていない・言い直す／未検証として送る",
+   "ai": "live",
+   "note": "誤訳は人工的に注入（UNSAID_INJECT_ERRORS）"
+  },
+  {
+   "no": 9,
+   "file": "09-patient-lossy-not-delivered.png",
+   "device": "patient",
+   "action": "その間の患者の画面",
+   "state": "未受信（届いていない）",
+   "info": "何も届いていない",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 10,
+   "file": "10-doctor-lossy-rephrase.png",
+   "device": "doctor",
+   "action": "「言い直す」を押した",
+   "state": "再入力（未送信）",
+   "info": "元の文が入力欄に戻る",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 11,
+   "file": "11-doctor-lossy-fixed-typed.png",
+   "device": "doctor",
+   "action": "医師が言い直した説明を入力（まだ送らない）",
+   "state": "入力済み・未送信",
+   "info": "検査を受ける前の8時間は、何も食べないでください。",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 12,
+   "file": "12-doctor-lossy-fixed-checking.png",
+   "device": "doctor",
+   "action": "「送る」を押した直後",
+   "state": "処理中（意図の解析・翻訳・照合）",
+   "info": "医師の発言は「確認中…／訳を照合中…」。患者にはまだ届いていない",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 13,
+   "file": "13-doctor-lossy-fixed-result.png",
+   "device": "doctor",
+   "action": "言い直した説明",
+   "state": "送信済み",
+   "info": "",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 14,
+   "file": "14-patient-lossy-fixed-received.png",
+   "device": "patient",
+   "action": "言い直した説明が届いた",
+   "state": "受信済み",
+   "info": "",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 15,
+   "file": "15-patient-pt-lossy-typed.png",
+   "device": "patient",
+   "action": "訴え（訳に人工的な誤りを注入）を入力（まだ送らない）",
+   "state": "入力済み・未送信",
+   "info": "我对青霉素过敏。",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 16,
+   "file": "16-patient-pt-lossy-checking.png",
+   "device": "patient",
+   "action": "「发送」を押した直後",
+   "state": "処理中（意図の解析・翻訳・照合）",
+   "info": "患者には確認中の表示。まだ医師に届いていない",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 17,
+   "file": "17-doctor-pt-lossy-pending.png",
+   "device": "doctor",
+   "action": "患者が送信した直後の医師の画面",
+   "state": "処理中（医師にはまだ届かない）",
+   "info": "医師には「確認中」の表示だけ。訳は未確定なので出ない",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 18,
+   "file": "18-patient-pt-lossy-review.png",
+   "device": "patient",
+   "action": "照合で相違（人工的に注入した誤訳）",
+   "state": "送信保留（本人の確認待ち）",
+   "info": "医生会看到（医師が読む内容）と、换个说法／仍然发送",
+   "ai": "live",
+   "note": "誤訳は人工的に注入"
+  },
+  {
+   "no": 19,
+   "file": "19-doctor-pt-lossy-waiting.png",
+   "device": "doctor",
+   "action": "その間の医師の画面",
+   "state": "未受信（患者が確認中）",
+   "info": "訳は出ない。「未検証の内容を見る」だけ",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 20,
+   "file": "20-patient-pt-lossy-rephrase.png",
+   "device": "patient",
+   "action": "「换个说法」を押した",
+   "state": "再入力（未送信）",
+   "info": "元の文が入力欄に戻る",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 21,
+   "file": "21-patient-pt-fixed-typed.png",
+   "device": "patient",
+   "action": "言い直した訴えを入力（まだ送らない）",
+   "state": "入力済み・未送信",
+   "info": "我对青霉素有过敏反应。",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 22,
+   "file": "22-patient-pt-fixed-checking.png",
+   "device": "patient",
+   "action": "「发送」を押した直後",
+   "state": "処理中（意図の解析・翻訳・照合）",
+   "info": "患者には確認中の表示。まだ医師に届いていない",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 23,
+   "file": "23-doctor-pt-fixed-pending.png",
+   "device": "doctor",
+   "action": "患者が送信した直後の医師の画面",
+   "state": "処理中（医師にはまだ届かない）",
+   "info": "医師には「確認中」の表示だけ。訳は未確定なので出ない",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 24,
+   "file": "24-doctor-pt-fixed-received.png",
+   "device": "doctor",
+   "action": "言い直した訴えが届いた",
+   "state": "受信済み",
+   "info": "",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 25,
+   "file": "25-doctor-offer-typed.png",
+   "device": "doctor",
+   "action": "医師が提案を入力（まだ送らない）",
+   "state": "入力済み・未送信",
+   "info": "痛み止めの注射をしましょうか？",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 26,
+   "file": "26-doctor-offer-checking.png",
+   "device": "doctor",
+   "action": "「送る」を押した直後",
+   "state": "処理中（意図の解析・翻訳・照合）",
+   "info": "医師の発言は「確認中…／訳を照合中…」。患者にはまだ届いていない",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 27,
+   "file": "27-patient-fine-typed.png",
+   "device": "patient",
+   "action": "「没事」を入力（まだ送らない）",
+   "state": "入力済み・未送信",
+   "info": "没事。",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 28,
+   "file": "28-patient-fine-checking.png",
+   "device": "patient",
+   "action": "「发送」を押した直後",
+   "state": "処理中（意図の解析・翻訳・照合）",
+   "info": "患者には確認中の表示。まだ医師に届いていない",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 29,
+   "file": "29-doctor-fine-pending.png",
+   "device": "doctor",
+   "action": "患者が送信した直後の医師の画面",
+   "state": "処理中（医師にはまだ届かない）",
+   "info": "医師には「確認中」の表示だけ。訳は未確定なので出ない",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 30,
+   "file": "30-patient-fine-intent.png",
+   "device": "patient",
+   "action": "Source Agent が意味の確認を求めた",
+   "state": "意図確認待ち（選ぶ前）",
+   "info": "断る・同意・痛くない など",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 31,
+   "file": "31-doctor-fine-intent-waiting.png",
+   "device": "doctor",
+   "action": "その間の医師の画面",
+   "state": "意図確認待ち（医師には訳が出ない）",
+   "info": "",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 32,
+   "file": "32-patient-fine-chosen.png",
+   "device": "patient",
+   "action": "意味を選んだ",
+   "state": "送信済み",
+   "info": "",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 33,
+   "file": "33-doctor-fine-confirmed.png",
+   "device": "doctor",
+   "action": "本人が選んだ意味で届いた",
+   "state": "受信済み（本人が意味を確認）",
+   "info": "",
+   "ai": "live",
+   "note": ""
+  }
+ ]
+}

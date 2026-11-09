@@ -229,7 +229,9 @@ const screens = {
           `${t.doctorRead}: “${v.lastSent.translation.back_translation}”`,
           h("button", { class: "btn-link", onclick: () => { S.draft = v.lastSent.original; render(true); } }, t.sayAgain)),
         v.answeredQ && h("div", { class: "p-answered" }, `${t.yourAnswer}: ${v.lastSent.original}`,
-          h("button", { class: "btn-link", onclick: () => { S.reopen = v.answeredQ.id; render(true); } }, t.change))),
+          h("button", { class: "btn-link", onclick: () => { S.reopen = v.answeredQ.id; render(true); } }, t.change)),
+        // 理解の確認（teach-back）への答えなど: 何を送ったかを自分で見られる（「医生已读」だけにしない）
+        v.lastSent?.replyTo && !v.answeredQ && h("div", { class: "p-answered" }, `${t.yourAnswer}: ${v.lastSent.original}`)),
       h("div", { class: "p-spacer" }),
       h("div", { class: "p-speak" },
         h("button", { class: "mic" + (rec ? " recording" : ""), "aria-label": rec ? t.micStop : t.mic,

@@ -43,6 +43,24 @@ if LIVE:
 else:
     fake_ai.install(unsaid_ai)
     fake_ai.DELAY_SEC = float(os.environ.get("FAKE_AI_DELAY", "0.8"))
+
+# UNSAID_INJECT_ERRORS=1: 補助デモ用に、決まった 2 文の翻訳だけを人工的に誤訳にする（照合と Safety Gate が止めることを見せるため）。
+# 本物の Gemini の誤訳ではない。開発サーバーだけの機能で、本番の main.py には無い。撮った画像には「人工的に注入した誤訳」と書く
+INJECTED = {
+    "検査の前は8時間何も食べないでください。": ("检查前请不要吃东西。", "検査の前は何も食べないでください。"),   # 数（8時間）が落ちた
+    "我对青霉素过敏。": ("ペニシリンのアレルギーはありません。", "我对青霉素不过敏。"),                         # 否定が反転した
+}
+if os.environ.get("UNSAID_INJECT_ERRORS") == "1":
+    _real_translate = unsaid_ai.translate
+
+    def _inject(original, *a, **k):
+        out, sec = _real_translate(original, *a, **k)
+        if original in INJECTED:
+            out = {**out, "translation": INJECTED[original][0], "back_translation": INJECTED[original][1]}
+            print(f"[devserver] 人工的に誤訳を注入: {original}")
+        return out, sec
+    unsaid_ai.translate = _inject
+    print("[devserver] 補助デモ: 決まった 2 文に人工的な誤訳を注入する")
 stt.transcribe = lambda audio, lang: ("", 0.0)  # 音声認識は使わない（文字で入力する）
 PATIENT_LANGS = ["en", "zh-CN", "vi"]
 
