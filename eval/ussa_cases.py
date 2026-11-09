@@ -1,0 +1,240 @@
+"""UNSAID 2.0 の比較評価（eval/compare.py）の模擬症例 100 件。すべて架空。正解は評価を走らせる前に、開発チームが決めた。
+
+  INTENT        発話意図の曖昧さ 25 件      文脈で意味が決まる（resolved）か、本人に聞くべき（clarify）か
+  MEDICAL       医学的な曖昧さ 20 件        医師に確認候補を出すべき原文の語（無ければ出さない）
+  PRECISION     否定・数量・日時・単位 20 件  正しい訳（reference）と、誤りを1つ入れた訳（corrupted）
+  EXPLANATION   説明不足 20 件              医師の説明に、患者が従うのに欠かせない情報が欠けているか
+  UNDERSTANDING 理解の相違 15 件            医師の説明と、患者の言い直しが食い違うか
+
+ok / bad は、聞き手の言語の訳に含まれていれば「意図どおり／取り違え」とみなす語（どれか1つ）。
+語の一致で数える近似なので、言い換えを取りこぼすことがある（EVALUATION.md「限界」）。
+"""
+D, P = "doctor", "patient"
+
+
+def ctx(speaker, original, translation):
+    return [{"speaker": speaker, "original": original, "translation": translation}]
+
+
+# ───────────── 1. 発話意図の曖昧さ（25）─────────────
+INTENT = [
+    # 日本語「大丈夫です」（DEVFEST 仕様 5.1 の例）
+    dict(id="ja-help", lang="ja", listener="en", speaker=P, text="大丈夫です。",
+         context=ctx(D, "Shall I help you stand up?", "立ち上がるのを手伝いましょうか？"), expect="resolved",
+         ok=["no, thank", "no thanks", "don't need", "i can manage", "i'm fine", "i'm okay", "i am fine", "i'm ok"],
+         bad=["no problem", "yes, please"]),
+    dict(id="ja-pain", lang="ja", listener="en", speaker=P, text="大丈夫です。",
+         context=ctx(D, "Do you have any pain?", "痛みはありますか？"), expect="resolved",
+         ok=["no", "not", "i'm fine", "i'm okay", "i'm ok"], bad=["it hurts", "yes, i"]),
+    dict(id="ja-continue", lang="ja", listener="en", speaker=P, text="大丈夫です。",
+         context=ctx(D, "Is it okay if we continue the examination?", "このまま診察を続けてもいいですか？"), expect="resolved",
+         ok=["that's fine", "that's okay", "it's fine", "it's okay", "go ahead", "yes", "please continue"],
+         bad=["no, thank", "i don't need"]),
+    dict(id="ja-wait", lang="ja", listener="en", speaker=P, text="大丈夫です。",
+         context=ctx(D, "Sorry to keep you waiting.", "お待たせしてすみません。"), expect="resolved",
+         ok=["no problem", "that's ok", "that's okay", "it's ok", "it's okay", "don't worry", "it's fine", "that's fine"],
+         bad=["no, thank"]),
+    dict(id="ja-understood", lang="ja", listener="en", speaker=P, text="大丈夫です。",
+         context=ctx(D, "Did you understand the explanation?", "説明は分かりましたか？"), expect="resolved",
+         ok=["understand", "understood", "got it", "clear", "yes"], bad=["no problem"]),
+    dict(id="ja-injection", lang="ja", listener="en", speaker=P, text="大丈夫です。",
+         context=ctx(D, "Shall I give you a painkiller injection?", "痛み止めの注射をしましょうか？"), expect="clarify"),
+    dict(id="ja-nocontext", lang="ja", listener="en", speaker=P, text="大丈夫です。", context=[], expect="clarify"),
+    # 中国語
+    dict(id="zh-help", lang="zh-CN", listener="ja", speaker=P, text="没事，我自己可以。",
+         context=ctx(D, "お手伝いしましょうか？", "需要我帮你吗？"), expect="resolved",
+         ok=["自分で", "大丈夫", "要りません", "結構", "できます"], bad=["お願いします"]),
+    dict(id="zh-pain", lang="zh-CN", listener="ja", speaker=P, text="没事。",
+         context=ctx(D, "痛みはありますか？", "你有疼痛吗？"), expect="resolved",
+         ok=["ありません", "痛くない", "大丈夫"], bad=["痛みがあります", "痛いです"]),
+    dict(id="zh-injection", lang="zh-CN", listener="ja", speaker=P, text="没事。",
+         context=ctx(D, "痛み止めの注射をしましょうか？", "要给你打止痛针吗？"), expect="clarify"),
+    dict(id="zh-nocontext", lang="zh-CN", listener="ja", speaker=P, text="没事。", context=[], expect="clarify"),
+    dict(id="zh-wheelchair", lang="zh-CN", listener="ja", speaker=P, text="不用了。",
+         context=ctx(D, "車椅子を使いますか？", "你要用轮椅吗？"), expect="resolved",
+         ok=["いいえ", "要りません", "結構", "大丈夫", "使いません"], bad=["使います", "お願いします"]),
+    dict(id="zh-ack", lang="zh-CN", listener="ja", speaker=P, text="好的。",
+         context=ctx(D, "検査の前の8時間は何も食べないでください。", "检查前8个小时请不要吃任何东西。"), expect="resolved",
+         ok=["はい", "分かりました", "了解", "わかりました"], bad=["食べます"]),
+    dict(id="zh-hmm", lang="zh-CN", listener="ja", speaker=P, text="嗯。",
+         context=ctx(D, "薬のアレルギーはありますか？", "你对药物过敏吗？"), expect="clarify"),
+    dict(id="zh-consent", lang="zh-CN", listener="ja", speaker=P, text="可以。",
+         context=ctx(D, "今から採血してもいいですか？", "现在可以给你抽血吗？"), expect="resolved",
+         ok=["はい", "どうぞ", "いいです", "大丈夫", "構いません", "お願いします"], bad=["いいえ", "結構です"]),
+    # 英語
+    dict(id="en-pain", lang="en", listener="ja", speaker=P, text="I'm fine.",
+         context=ctx(D, "痛みはありますか？", "Do you have any pain?"), expect="resolved",
+         ok=["ありません", "大丈夫", "痛くない", "痛みはない"], bad=["痛みがあります"]),
+    dict(id="en-wheelchair", lang="en", listener="ja", speaker=P, text="I'm fine, thanks.",
+         context=ctx(D, "車椅子を使いますか？", "Would you like to use a wheelchair?"), expect="resolved",
+         ok=["結構", "要りません", "大丈夫", "いいえ", "使いません"], bad=["お願いします"]),
+    dict(id="en-injection", lang="en", listener="ja", speaker=P, text="I'm fine.",
+         context=ctx(D, "注射をしてもいいですか？", "Is it okay if I give you an injection?"), expect="clarify"),
+    dict(id="en-not-really", lang="en", listener="ja", speaker=P, text="Not really.",
+         context=ctx(D, "ここを押すと痛いですか？", "Does it hurt when I press here?"), expect="resolved",
+         ok=["あまり", "それほど", "そんなに", "ほとんど"], bad=["全く痛くありません", "とても痛い"]),
+    dict(id="en-guess", lang="en", listener="ja", speaker=P, text="I guess so.",
+         context=ctx(D, "今朝、薬を飲みましたか？", "Did you take your medicine this morning?"), expect="resolved",
+         ok=["たぶん", "と思います", "多分", "おそらく", "はず"], bad=["飲んでいません"]),
+    dict(id="en-okay", lang="en", listener="ja", speaker=P, text="Okay.",
+         context=ctx(D, "明日の朝は何も食べずに来てください。", "Please come tomorrow morning without eating anything."),
+         expect="resolved", ok=["はい", "分かりました", "わかりました", "了解"], bad=["食べます"]),
+    dict(id="en-sure", lang="en", listener="ja", speaker=P, text="Sure.", context=[], expect="clarify"),
+    # ベトナム語
+    dict(id="vi-pain", lang="vi", listener="ja", speaker=P, text="Không sao.",
+         context=ctx(D, "痛みはありますか？", "Bạn có đau không?"), expect="resolved",
+         ok=["ありません", "大丈夫", "痛くない"], bad=["痛みがあります"]),
+    dict(id="vi-help", lang="vi", listener="ja", speaker=P, text="Không sao, tôi tự làm được.",
+         context=ctx(D, "お手伝いしましょうか？", "Tôi giúp bạn nhé?"), expect="resolved",
+         ok=["自分で", "大丈夫", "要りません", "できます"], bad=["お願いします"]),
+    dict(id="vi-da", lang="vi", listener="ja", speaker=P, text="Dạ.",
+         context=ctx(D, "薬のアレルギーはありますか？", "Bạn có bị dị ứng thuốc không?"), expect="clarify"),
+]
+
+# ───────────── 2. 医学的な曖昧さ（20）─────────────
+# ambiguities: 医師が確認すべき原文の語（どれか1つに当たれば検出）。[] は聞かなくてよい発言
+MEDICAL = [
+    dict(id="m-zh-dizzy", lang="zh-CN",
+         text="医生，我是来日本旅游的，昨天刚到。今天在车站突然觉得头晕，眼前发黑，差点晕倒。坐下来休息了一会儿好一些，但现在还是有点不舒服，我有点害怕。",
+         ambiguities=["头晕"], forbidden=["貧血", "脳", "不整脈", "低血糖", "失神した", "意識消失"]),
+    dict(id="m-zh-days", lang="zh-CN", text="我头疼好几天了，吃了止疼药也没用。", ambiguities=["好几天"],
+         forbidden=["片頭痛", "偏頭痛", "ロキソニン"]),
+    dict(id="m-zh-sometimes", lang="zh-CN", text="我有时候胸口疼，特别是爬楼梯的时候。", ambiguities=["有时候"],
+         forbidden=["狭心症", "心筋梗塞"]),
+    dict(id="m-zh-tight", lang="zh-CN", text="我有点胸闷。", ambiguities=["胸闷"], forbidden=["喘息", "狭心症"]),
+    dict(id="m-zh-diarrhea", lang="zh-CN", text="我最近老是拉肚子。", ambiguities=["老是", "最近"], forbidden=["胃腸炎"]),
+    dict(id="m-zh-nofever", lang="zh-CN", text="我没有发烧，也不咳嗽。", ambiguities=[], forbidden=["風邪", "感染"]),
+    dict(id="m-zh-fever385", lang="zh-CN", text="我昨天晚上发烧了，38度5。", ambiguities=[], forbidden=["インフルエンザ"]),
+    dict(id="m-en-dizzy", lang="en", text="I feel dizzy when I stand up, and I almost fell this morning.", ambiguities=["dizzy"],
+         forbidden=["起立性低血圧", "貧血", "転倒した"]),
+    dict(id="m-en-while", lang="en", text="I've had a headache for a while.", ambiguities=["for a while"],
+         forbidden=["片頭痛", "慢性"]),
+    dict(id="m-en-funny", lang="en", text="My heart feels funny.", ambiguities=["funny", "feels funny"], forbidden=["不整脈"]),
+    dict(id="m-en-weak", lang="en", text="I've been feeling weak.", ambiguities=["weak"], forbidden=["貧血", "麻痺"]),
+    dict(id="m-en-sick", lang="en", text="I feel sick.", ambiguities=["sick"], forbidden=["胃腸炎", "感染"]),
+    dict(id="m-en-allergy", lang="en", text="I'm allergic to penicillin. I got a rash last time.", ambiguities=[],
+         forbidden=["アナフィラキシー", "蕁麻疹"]),
+    dict(id="m-en-reception", lang="en", text="I waited at reception for a while. My throat has hurt since yesterday.",
+         ambiguities=[], forbidden=["扁桃", "咽頭炎"]),
+    dict(id="m-en-ibuprofen", lang="en", text="I took two tablets of ibuprofen this morning.", ambiguities=[],
+         forbidden=["過量", "副作用"]),
+    dict(id="m-vi-dizzy", lang="vi", text="Tôi bị chóng mặt khi đứng dậy.", ambiguities=["chóng mặt"], forbidden=["貧血"]),
+    dict(id="m-vi-days", lang="vi", text="Mấy bữa nay tôi bị đau bụng sau khi ăn.", ambiguities=["Mấy bữa nay", "mấy bữa"],
+         forbidden=["胃炎", "胃潰瘍"]),
+    dict(id="m-vi-chest", lang="vi", text="Tôi bị tức ngực.", ambiguities=["tức ngực"], forbidden=["狭心症"]),
+    dict(id="m-vi-uneasy", lang="vi", text="Tôi thấy khó chịu trong người.", ambiguities=["khó chịu trong người", "khó chịu"],
+         forbidden=["うつ", "感染"]),
+    dict(id="m-vi-nofever", lang="vi", text="Tôi không bị sốt.", ambiguities=[], forbidden=["風邪"]),
+]
+
+# ───────────── 3. 否定・数量・日時・単位（20）─────────────
+# reference: 正しい訳（人が書いた）。corrupted: 誤りを1つだけ入れた訳。error: その種類
+PRECISION = [
+    dict(id="p-dose-freq", lang="ja", listener="zh-CN", speaker=D, text="この薬は1日2回、朝と夜に1錠ずつ飲んでください。",
+         reference="这个药一天两次，早上和晚上各吃一片。", corrupted="这个药一天三次，早上和晚上各吃一片。", error="frequency"),
+    dict(id="p-not-empty", lang="ja", listener="en", speaker=D, text="空腹時には飲まないでください。",
+         reference="Do not take it on an empty stomach.", corrupted="Take it on an empty stomach.", error="negation"),
+    dict(id="p-fast-8h", lang="ja", listener="en", speaker=D, text="検査の前は8時間何も食べないでください。",
+         reference="Do not eat anything for 8 hours before the test.", corrupted="Do not eat anything before the test.",
+         error="quantity_omission"),
+    dict(id="p-today", lang="ja", listener="zh-CN", speaker=D, text="今日は検査の結果が出るまで、帰らずに待ってください。",
+         reference="今天请先不要回家，等检查结果出来。", corrupted="明天等检查结果出来再回家。", error="time"),
+    dict(id="p-next-monday", lang="ja", listener="vi", speaker=D, text="来週の月曜日にもう一度来てください。",
+         reference="Thứ Hai tuần sau hãy quay lại.", corrupted="Thứ Hai tuần này hãy quay lại.", error="time"),
+    dict(id="p-swap", lang="ja", listener="en", speaker=D, text="1回に2錠まで、1日3回までにしてください。",
+         reference="Take up to 2 tablets at a time, and no more than 3 times a day.",
+         corrupted="Take up to 3 tablets at a time, and no more than 2 times a day.", error="quantity_swap"),
+    dict(id="p-mg", lang="ja", listener="zh-CN", speaker=D, text="500mgの錠剤を1日1回飲んでください。",
+         reference="请每天服用一次500毫克的药片。", corrupted="请每天服用一次50毫克的药片。", error="quantity"),
+    dict(id="p-fever-cond", lang="ja", listener="en", speaker=D, text="熱が38度5分を超えたら、この薬を飲んでください。",
+         reference="If your fever goes above 38.5°C, take this medicine.", corrupted="Take this medicine.",
+         error="condition_missing"),
+    dict(id="p-pain-cond", lang="ja", listener="en", speaker=D, text="痛みが強くなったら、すぐに来てください。",
+         reference="If the pain gets worse, come right away.", corrupted="Come right away.", error="condition_missing"),
+    dict(id="p-clock", lang="ja", listener="zh-CN", speaker=D, text="8時半までに受付に来てください。",
+         reference="请在8点半之前到挂号处。", corrupted="请在9点半之前到挂号处。", error="clock"),
+    dict(id="p-once", lang="ja", listener="vi", speaker=D, text="この薬は寝る前に1回だけ飲んでください。",
+         reference="Chỉ uống thuốc này một lần trước khi ngủ.", corrupted="Uống thuốc này hai lần trước khi ngủ.",
+         error="frequency"),
+    dict(id="p-alcohol", lang="ja", listener="en", speaker=D, text="お酒は飲まないでください。",
+         reference="Please do not drink alcohol.", corrupted="Please drink alcohol.", error="negation"),
+    dict(id="p-nofever", lang="zh-CN", listener="ja", speaker=P, text="我没有发烧，但是咳嗽三天了。",
+         reference="熱はありませんが、3日前から咳が出ています。", corrupted="熱があって、3日前から咳が出ています。",
+         error="negation"),
+    dict(id="p-allergy", lang="zh-CN", listener="ja", speaker=P, text="我对青霉素过敏。",
+         reference="ペニシリンにアレルギーがあります。", corrupted="ペニシリンにアレルギーはありません。", error="negation"),
+    dict(id="p-two-pills", lang="en", listener="ja", speaker=P, text="I took two pills this morning.",
+         reference="今朝、2錠飲みました。", corrupted="今朝、1錠飲みました。", error="quantity"),
+    dict(id="p-yesterday", lang="en", listener="ja", speaker=P, text="The pain started yesterday.",
+         reference="痛みは昨日始まりました。", corrupted="痛みは今日始まりました。", error="time"),
+    dict(id="p-pregnant", lang="en", listener="ja", speaker=P, text="I don't think I'm pregnant.",
+         reference="妊娠はしていないと思います。", corrupted="妊娠していると思います。", error="negation"),
+    dict(id="p-vi-two", lang="vi", listener="ja", speaker=P, text="Tôi đã uống hai viên thuốc hạ sốt.",
+         reference="解熱剤を2錠飲みました。", corrupted="解熱剤を3錠飲みました。", error="quantity"),
+    dict(id="p-monday", lang="en", listener="ja", speaker=P, text="I've been vomiting since Monday.",
+         reference="月曜日から吐いています。", corrupted="金曜日から吐いています。", error="weekday"),
+    dict(id="p-bp", lang="en", listener="ja", speaker=P, text="My blood pressure was 150 over 90 this morning.",
+         reference="今朝の血圧は150の90でした。", corrupted="今朝の血圧は130の90でした。", error="quantity"),
+]
+
+# ───────────── 4. 説明不足（20）─────────────
+# insufficient: 患者がその指示に従うのに欠かせない情報（量・回数・タイミング・期間・場所など）が欠けているか
+EXPLANATION = [
+    dict(id="e-take", text="この薬を飲んでください。", insufficient=True),
+    dict(id="e-tomorrow", text="明日また来てください。", insufficient=True),
+    dict(id="e-fast", text="検査の前は食事を控えてください。", insufficient=True),
+    dict(id="e-prn", text="痛いときに飲んでください。", insufficient=True),
+    dict(id="e-ointment", text="この塗り薬を塗ってください。", insufficient=True),
+    dict(id="e-rest", text="安静にしてください。", insufficient=True),
+    dict(id="e-eyedrop", text="目薬をさしてください。", insufficient=True),
+    dict(id="e-result", text="次は検査の結果を聞きに来てください。", insufficient=True),
+    dict(id="e-reduce", text="薬を減らしてください。", insufficient=True),
+    dict(id="e-inhaler", text="吸入薬を使ってください。", insufficient=True),
+    dict(id="e-water", text="水分をこまめにとってください。", insufficient=False),
+    dict(id="e-swelling", text="腫れがひどくなったら、また来てください。", insufficient=False),
+    dict(id="e-reception", text="この紙を受付に出してください。", insufficient=False),
+    dict(id="e-after-breakfast", text="朝食後に1錠飲んでください。", insufficient=False),
+    dict(id="e-full", text="この薬は1日3回、毎食後に1錠ずつ、5日間飲んでください。", insufficient=False),
+    dict(id="e-blood", text="明日の朝9時に、空腹のまま採血に来てください。", insufficient=False),
+    dict(id="e-3days", text="3日たっても熱が下がらなければ、また来てください。", insufficient=False),
+    dict(id="e-shower", text="シャワーは今日はやめて、明日からにしてください。", insufficient=False),
+    dict(id="e-bandage", text="包帯は毎日1回、新しいものに取り替えてください。", insufficient=False),
+    dict(id="e-painkiller", text="痛み止めは1回1錠、6時間以上あけて飲んでください。", insufficient=False),
+]
+
+# ───────────── 5. 理解の相違（15）─────────────
+# 医師の説明（日本語）と、患者が自分から確かめる言い直し。mismatch: 食い違いがあるか
+UNDERSTANDING = [
+    dict(id="u-dose-wrong", explanation="この薬は1日2回、朝と夜に1錠ずつ飲んでください。", lang="zh-CN",
+         restatement="早上吃两片就可以了，对吗？", mismatch=True),
+    dict(id="u-dose-right", explanation="この薬は1日2回、朝と夜に1錠ずつ飲んでください。", lang="zh-CN",
+         restatement="一天两次，早上和晚上各一片，对吗？", mismatch=False),
+    dict(id="u-wait-wrong", explanation="今日は検査の結果が出るまで、帰らずに待ってください。", lang="zh-CN",
+         restatement="明天再来就可以了，是吗？", mismatch=True),
+    dict(id="u-wait-right", explanation="今日は検査の結果が出るまで、帰らずに待ってください。", lang="en",
+         restatement="So I should wait here until the results come out today?", mismatch=False),
+    dict(id="u-fast-wrong", explanation="検査の前は8時間何も食べないでください。", lang="en",
+         restatement="So I can eat breakfast right before the test?", mismatch=True),
+    dict(id="u-monday-wrong", explanation="来週の月曜日にもう一度来てください。", lang="vi",
+         restatement="Vậy thứ Hai tuần này tôi quay lại phải không?", mismatch=True),
+    dict(id="u-monday-right", explanation="来週の月曜日にもう一度来てください。", lang="vi",
+         restatement="Thứ Hai tuần sau tôi quay lại, đúng không?", mismatch=False),
+    dict(id="u-alcohol-wrong", explanation="お酒は飲まないでください。", lang="en",
+         restatement="So a little beer is okay?", mismatch=True),
+    dict(id="u-pain-wrong", explanation="痛みが強くなったら、すぐに来てください。", lang="zh-CN",
+         restatement="那我每天都要来吗？", mismatch=True),
+    dict(id="u-max-wrong", explanation="1回に2錠まで、1日3回までにしてください。", lang="en",
+         restatement="So up to three pills at a time?", mismatch=True),
+    dict(id="u-once-right", explanation="この薬は寝る前に1回だけ飲んでください。", lang="zh-CN",
+         restatement="睡觉前吃一次，对吧？", mismatch=False),
+    dict(id="u-shower-wrong", explanation="シャワーは今日はやめて、明日からにしてください。", lang="en",
+         restatement="I can take a shower tonight, right?", mismatch=True),
+    dict(id="u-3days-right", explanation="3日たっても熱が下がらなければ、また来てください。", lang="vi",
+         restatement="Nếu sau ba ngày vẫn còn sốt thì tôi quay lại, đúng không?", mismatch=False),
+    dict(id="u-ointment-wrong", explanation="この塗り薬は1日2回、患部に薄く塗ってください。", lang="en",
+         restatement="So I put a thick layer once a day?", mismatch=True),
+    dict(id="u-blood-wrong", explanation="明日の朝9時に、空腹のまま採血に来てください。", lang="zh-CN",
+         restatement="明天早上九点，吃完早饭来抽血，对吗？", mismatch=True),
+]
+
+assert (len(INTENT), len(MEDICAL), len(PRECISION), len(EXPLANATION), len(UNDERSTANDING)) == (25, 20, 20, 20, 15)
