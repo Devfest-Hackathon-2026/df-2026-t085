@@ -12,9 +12,10 @@ from google.genai import types
 
 PROJECT = "unsaid-devfest"
 LOCATION = "global"
-MODEL = "gemini-3.8-flash"
-# translate だけ軽いモデルに替えて速度を比べられるようにしておく（例: Flash-Lite 系）
-TRANSLATE_MODEL = MODEL
+# 使うモデル。Cloud Run の環境変数 GEMINI_MODEL で替えられる（どれを選ぶかの根拠は eval/compare_models.py）
+MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+# translate だけ別のモデルにしたいとき（例: Flash-Lite 系）。空なら MODEL と同じ
+TRANSLATE_MODEL = os.environ.get("TRANSLATE_MODEL", "")
 # 1回の待ち時間の上限と、超えたときの再試行回数。
 # 実測では普段 2〜7 秒、まれに 40〜70 秒かかる外れ値があったため、待たずに打ち直す
 TIMEOUT_SEC = 12
@@ -92,8 +93,9 @@ def _status(e):
 _hedge_pool = ThreadPoolExecutor(max_workers=32)
 
 
-def _call(system_file, schema_file, payload, model=MODEL):
+def _call(system_file, schema_file, payload, model=None):
     """Gemini を1回呼ぶ。HEDGE_SEC を過ぎても返らなければ、同じ依頼をもう1本投げて先に成功した方を返す。"""
+    model = model or MODEL  # 呼ぶたびに読む（eval/compare_models.py が MODEL を差し替えて比べる）
     if HEDGE_SEC <= 0:
         return _call_once(system_file, schema_file, payload, model)
     start = time.time()
@@ -115,7 +117,8 @@ def _call(system_file, schema_file, payload, model=MODEL):
     raise err
 
 
-def _call_once(system_file, schema_file, payload, model=MODEL):
+def _call_once(system_file, schema_file, payload, model=None):
+    model = model or MODEL
     start = time.time()
     timeouts = busy = 0
     while True:
@@ -139,6 +142,8 @@ def _call_once(system_file, schema_file, payload, model=MODEL):
                 "attempt": attempt,
                 "thoughts": getattr(u, "thoughts_token_count", None),
                 "out_tokens": getattr(u, "candidates_token_count", None),
+                "in_tokens": getattr(u, "prompt_token_count", None),
+                "model": model,
             }
             return out, time.time() - start
         except Exception as e:
@@ -247,7 +252,7 @@ def translate(original, source_lang, target_lang, direction, clarification=None)
     return _call(
         "prompts/translate_system.txt",
         "schemas/translate.json",
-        model=TRANSLATE_MODEL,
+        model=TRANSLATE_MODEL or None,
         payload={
             "direction": direction,
             "source_lang": _lang(source_lang),

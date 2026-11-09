@@ -1,0 +1,433 @@
+{
+ "summary": {
+  "n": 60,
+  "ok": 60,
+  "median": 3.7,
+  "p90": 5.0,
+  "p95": 6.2,
+  "max": 7.4,
+  "over8s": 0
+ },
+ "runs": [
+  {
+   "text": "I've had a headache for a while.",
+   "shown": 4.79,
+   "api": 6.05,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "I'm allergic to penicillin.",
+   "shown": 7.38,
+   "api": 7.38,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I feel dizzy when I stand up.",
+   "shown": 3.55,
+   "api": 3.55,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "我没有发烧。",
+   "shown": 3.5,
+   "api": 3.5,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I've had a headache for a while.",
+   "shown": 3.68,
+   "api": 3.94,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "I'm allergic to penicillin.",
+   "shown": 4.82,
+   "api": 4.82,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I feel dizzy when I stand up.",
+   "shown": 3.61,
+   "api": 3.61,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "我没有发烧。",
+   "shown": 4.74,
+   "api": 4.74,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I've had a headache for a while.",
+   "shown": 3.48,
+   "api": 7.56,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "I'm allergic to penicillin.",
+   "shown": 3.48,
+   "api": 3.48,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I feel dizzy when I stand up.",
+   "shown": 3.5,
+   "api": 3.5,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "我没有发烧。",
+   "shown": 4.68,
+   "api": 4.68,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I've had a headache for a while.",
+   "shown": 3.53,
+   "api": 3.81,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "I'm allergic to penicillin.",
+   "shown": 4.78,
+   "api": 4.78,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I feel dizzy when I stand up.",
+   "shown": 4.64,
+   "api": 4.64,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "我没有发烧。",
+   "shown": 3.42,
+   "api": 3.42,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I've had a headache for a while.",
+   "shown": 3.29,
+   "api": 4.31,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "I'm allergic to penicillin.",
+   "shown": 3.63,
+   "api": 3.63,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I feel dizzy when I stand up.",
+   "shown": 3.49,
+   "api": 3.49,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "我没有发烧。",
+   "shown": 2.17,
+   "api": 3.2,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I've had a headache for a while.",
+   "shown": 6.09,
+   "api": 6.09,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "I'm allergic to penicillin.",
+   "shown": 3.55,
+   "api": 3.55,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I feel dizzy when I stand up.",
+   "shown": 3.42,
+   "api": 3.42,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "我没有发烧。",
+   "shown": 3.71,
+   "api": 3.78,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I've had a headache for a while.",
+   "shown": 4.78,
+   "api": 4.78,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "I'm allergic to penicillin.",
+   "shown": 3.69,
+   "api": 3.69,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I feel dizzy when I stand up.",
+   "shown": 4.85,
+   "api": 4.85,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "我没有发烧。",
+   "shown": 4.68,
+   "api": 4.68,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I've had a headache for a while.",
+   "shown": 3.54,
+   "api": 4.83,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "I'm allergic to penicillin.",
+   "shown": 3.58,
+   "api": 3.58,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I feel dizzy when I stand up.",
+   "shown": 4.72,
+   "api": 4.72,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "我没有发烧。",
+   "shown": 4.84,
+   "api": 4.84,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I've had a headache for a while.",
+   "shown": 3.57,
+   "api": 3.57,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "I'm allergic to penicillin.",
+   "shown": 3.54,
+   "api": 3.54,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I feel dizzy when I stand up.",
+   "shown": 3.58,
+   "api": 3.58,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "我没有发烧。",
+   "shown": 4.95,
+   "api": 4.95,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I've had a headache for a while.",
+   "shown": 3.52,
+   "api": 4.62,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "I'm allergic to penicillin.",
+   "shown": 2.8,
+   "api": 2.86,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I feel dizzy when I stand up.",
+   "shown": 6.35,
+   "api": 6.35,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "我没有发烧。",
+   "shown": 4.85,
+   "api": 4.85,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I've had a headache for a while.",
+   "shown": 3.77,
+   "api": 3.77,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "I'm allergic to penicillin.",
+   "shown": 4.85,
+   "api": 4.85,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I feel dizzy when I stand up.",
+   "shown": 5.95,
+   "api": 5.95,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "我没有发烧。",
+   "shown": 4.76,
+   "api": 4.76,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I've had a headache for a while.",
+   "shown": 4.8,
+   "api": 4.8,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "I'm allergic to penicillin.",
+   "shown": 3.74,
+   "api": 3.74,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I feel dizzy when I stand up.",
+   "shown": 4.81,
+   "api": 4.81,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "我没有发烧。",
+   "shown": 3.7,
+   "api": 3.7,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I've had a headache for a while.",
+   "shown": 3.5,
+   "api": 4.43,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "I'm allergic to penicillin.",
+   "shown": 3.55,
+   "api": 3.55,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I feel dizzy when I stand up.",
+   "shown": 4.84,
+   "api": 4.84,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "我没有发烧。",
+   "shown": 6.18,
+   "api": 6.18,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I've had a headache for a while.",
+   "shown": 2.34,
+   "api": 2.34,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "I'm allergic to penicillin.",
+   "shown": 3.63,
+   "api": 3.63,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I feel dizzy when I stand up.",
+   "shown": 3.55,
+   "api": 3.55,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "我没有发烧。",
+   "shown": 4.99,
+   "api": 4.99,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I've had a headache for a while.",
+   "shown": 3.6,
+   "api": 5.19,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "I'm allergic to penicillin.",
+   "shown": 2.36,
+   "api": 2.36,
+   "status": "confirmed",
+   "code": 200
+  },
+  {
+   "text": "I feel dizzy when I stand up.",
+   "shown": 4.75,
+   "api": 4.75,
+   "status": "clarifying",
+   "code": 200
+  },
+  {
+   "text": "我没有发烧。",
+   "shown": 4.9,
+   "api": 9.04,
+   "status": "confirmed",
+   "code": 200
+  }
+ ]
+}
