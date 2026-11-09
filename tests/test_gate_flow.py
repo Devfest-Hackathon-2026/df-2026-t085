@@ -195,7 +195,7 @@ def test_session_end_during_analysis_sends_nothing(api):
         r = api.post("/translate", messageId=mid)
     finally:
         main._verify = real
-    assert r.json()["status"] == "stopped" and not any(k.startswith("sessions/s1") for k in api.db.store)
+    assert r.json()["status"] == "stopped" and api.gone()
 
 
 def test_double_send_is_cancelled(api):

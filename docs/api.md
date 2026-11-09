@@ -34,7 +34,7 @@ API    gate.state: SOURCE_CONFIRMED → ANALYZING →（意図が決まらない
 | POST | `/reveal` | 医師 | 患者の未着の発言の原文（未検証）。見たことを記録 | 届いた発言 400、患者 403 |
 | POST | `/issue/update` | 医師 | 未解決事項の状態 | 閉じた事項の保留・できない遷移 409、無い事項 404 |
 | POST | `/teachback/start` | 医師 | `{messageId}`。`previousId`（再説明の前の理解の確認）を渡すと、確認済みにしたとき前の相違も解決 | |
-| POST | `/clarify/send` | 医師 | `issueId` を渡すと未解決事項を「確認中」にし、答えが届くと「回答あり」 | |
+| POST | `/clarify/send` | 医師 | 確認候補の対訳をそのまま送る → すぐ届く（`gate.verification = PRETRANSLATED`）。**編集・自作した質問は医師の発言と同じく Safety Gate を通る**（`{status: sent｜awaiting_intent｜needs_review, messageId}`。確認待ちは `/intent`・`/review`）。元の候補・`issueId` の未解決事項は、質問が**届いたときに**「質問送信済み」・「確認中」になる | 同じ候補の質問がまだ確認中なら 409 |
 
 メッセージの `gate`: `state` `history[]` `run_id` `source_hash` `intent {state, decided_by, interpretations[], question_speaker, frame, confirmed}`
 `verification {status, issues[{type, strength, layer, detail, detail_speaker?}], failures}` `draft {translation, back_translation}` `attempts[]` `override` `revealed[]` `timings`。
@@ -70,10 +70,10 @@ API    gate.state: SOURCE_CONFIRMED → ANALYZING →（意図が決まらない
 | POST | `/send` | 患者 | `messageId` | 200 `{status:"sent"}`。もう送っていれば何もしない。`confirmed` 以外は 409 |
 | POST | `/clarify/send` | 医師 | `messageId` + `candidateId`（そのまま）／ + `questionDoctor`（編集）／ `questionDoctor` + 任意で `messageId`・`factId`（自分で書く） | 200 `{messageId, candidateId}`。編集・自作は Gemini で訳す（選択肢なし） |
 | POST | `/clarify/update` | 医師 | `messageId`, `candidateId`, `action: hold｜dismiss｜restore` | 200。できない遷移は 409 |
-| POST | `/fact/update` | 医師 | `messageId`, `factId`, `action: confirm｜flag｜reset`, `note?` | 200。できない遷移は 409 |
+| POST | `/fact/update` | 医師 | `messageId`, `factId`, `action: confirm｜flag｜reset`, `note?` | 200。できない遷移は 409。未解決の「再確認が必要」（`rechecks[].required`）は、この操作で解決として記録する（記録は消さない） |
 | POST | `/teachback/start` | 医師 | `messageId`（送信済みの医師の説明） | 200 `{messageId}` |
 | POST | `/teachback/resolve` | 医師 | `messageId`（依頼）, `action: confirm｜reexplain` | 200 |
-| POST | `/meaning/retry` | メンバー | `messageId`（`meaning.status = error` の発言） | 200。必要なければ 409 |
+| POST | `/meaning/retry` | メンバー | `messageId`（`meaning.status` が `error`、または期限切れの `retrying` の発言）。所有者 ID（`meaning.retry_run`）と期限（`meaning.retry_until`、130 秒）を付けて始め、サーバーが止まっても期限が切れたら引き継げる。初回と同じ文脈で解析し、保存時にトランザクションで最新を読み直す（引き継がれた古い処理は書き戻さない）。成功したら答えを元の候補・情報に結びつける（下の「医師の判断の後に届いた答え」）。回答履歴は送った順・重複なし | 200。必要なければ・期限内のやり直し中・ほかの処理に引き継がれたら 409 |
 
 - 医師だけの API を患者・第三者が呼ぶと 403。問診を作ってから `SESSION_MAX_HOURS`（12 時間）を過ぎると 410。
 - `/send` と医師の操作は Gemini を使わないので、呼び出し回数（`MAX_CALLS_PER_SESSION`）に数えない。
@@ -235,3 +235,17 @@ Firestore のルール案は `firestore.rules`（端末が書けるのは上の�
 - **確認質問なしの発言は、analyze の流れで翻訳まで済ませる。** 端末の呼び出しが1回で済み、患者は逆翻訳を見てから送れる。
 - **失敗は `status: "error"`** にして、同じ API の呼び直しで復帰できるようにした（合意したスキーマへの追加）。
 - **`translation` に `back_translation` と `note` を追加**（合意したスキーマは `{lang, text}`）。逆翻訳は VoiceTra 等との差別化ポイント。
+
+
+## 医師の判断の後に届いた答え（`facts[].rechecks`）
+
+医師が確認済み・要修正にした情報（fact）に、確認質問への答えが届いたとき、答えを送った時刻（`sentAt`）と医師の判断の時刻を比べる。
+
+| 答え | 情報の状態 | 記録 |
+|---|---|---|
+| 医師の判断より 1 秒以上前に届いていた（医師は原文と訳を見て判断した。解析が遅れただけ） | 変えない | 履歴に `patient_answered_late` |
+| 医師の判断の後に届いた・時刻が分からない・差が 1 秒未満（時計のずれ。安全側に倒す） | 患者回答あり（「分からない」なら未確認）に戻し、**再確認が必要** | 履歴に `patient_answered` と `recheck_required`。`rechecks` に、医師の判断（`doctor_event` `doctor_at` `doctor_note` `doctor_status`）・判断したときの答えと内容（`doctor_answer_id` `doctor_resolved_meaning`）・直前の答え（`previous_answer_id`）・新しい答え（`new_answer_id` `new_meaning`）を残す |
+
+医師の判断の履歴は消さない。医師がもう一度判断すると `required: false`・`resolved_by`・`resolved_at` を付ける。
+確認候補の `answers` は送った順に並べ、最後が今の答え。後から送った答えがすでにあれば、古い答えは記録だけ（`superseded_by`）で、情報を巻き戻さない。
+医師の画面は問診メモに「再確認が必要」、根拠の欄に判断したときの内容と新しい答えを出す。カルテ用の文章では［要再確認］。

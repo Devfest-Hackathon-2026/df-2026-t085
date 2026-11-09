@@ -32,6 +32,7 @@ if (isMainThread) {
     for (const [name, w] of [["doctor", doctor], ["patient", patient]]) {
       w.on("message", (m) => {
         if (m.sid) patient.postMessage({ sid: m.sid });
+        if (m.to) (m.to === "patient" ? patient : doctor).postMessage({ ev: m.ev }); // 医師と患者の順序合わせ
         if (m.log) console.log(`[${name}] ${m.log}`);
         if (m.done) { results[name] = m; if (Object.keys(results).length === 2) ok(); }
       });
@@ -55,6 +56,9 @@ if (isMainThread) {
 const { JSDOM } = createRequire(import.meta.url)("jsdom");
 const { role, dir } = workerData;
 const log = (s) => parentPort.postMessage({ log: s });
+const events = new Set(); // 相手の画面からの合図（順序を決めたい所だけ）
+parentPort.on("message", (m) => { if (m.ev) events.add(m.ev); });
+const signal = (to, ev) => parentPort.postMessage({ to, ev });
 const pageErrors = [];
 let clipboard = "";
 
@@ -122,6 +126,10 @@ const F_TEXT = "この薬は空腹時に飲まないでください。";
 const G_TEXT = "検査の前は8時間何も食べないでください。";
 const E_DOSE = "この薬は1日2回、朝と夜に1錠ずつ飲んでください。";
 const E_WRONG = "早上吃两片就可以了，对吗？";
+const Q1 = "熱はありますか？";
+const Q2 = "吐き気はありますか？";
+const Q1_ANSWER = "不发烧。";
+const Q2_ANSWER = "没有恶心。";
 
 async function doctorSays(text) {
   type($("#dinput"), text);
@@ -160,6 +168,33 @@ async function doctorFlow() {
   await click(".d-evidence .btn-small", "確認済みにする");
   await waitFor(() => $('.d-memo .check[aria-label="医師確認済み"]'), "医師確認済み");
   check(true, "医師が確認済みにした");
+
+  // ── 医師が確認済みにした後に、患者が答えを直す → 「再確認が必要」。医師の確認の履歴は残る ──
+  signal("patient", "confirmed");
+  await waitFor(() => byText(".d-memo .tag", "再確認が必要"), "医師の判断の後に新しい答え", 30000);
+  check(!$('.d-memo .check[aria-label="医師確認済み"]'), "新しい答えが届いたら、医師確認済みのままにしない");
+  if (!$(".d-evidence")) await click(".d-fact", "めまい"); // 確認したときに開いたままなら、そのまま
+  const rc = await waitFor(() => $(".d-evidence"), "根拠");
+  check(rc.textContent.includes("確認済みにした後、新しい答えが届きました") && rc.textContent.includes("周囲がぐるぐる回る")
+    && rc.textContent.includes("医師が確認") && rc.textContent.includes("再確認が必要"),
+    "判断したときの内容・新しい答え・医師の確認の履歴を並べて出す");
+  await click(".d-evidence .btn-small", "確認済みにする");
+  await waitFor(() => !byText(".d-memo .tag", "再確認が必要") && $('.d-memo .check[aria-label="医師確認済み"]'), "もう一度確認");
+  check(true, "医師がもう一度確認すると「再確認が必要」が外れる");
+
+  // ── 続けて2つ質問する（レビュー指摘2: 2つ目に答えても1つ目が消えない）──
+  const u = await import(pathToFileURL(join(dir, "unsaid.js")).href); // 画面と同じ部品で医師の自作の質問を送る
+  const q1 = (await u.sendQuestion(sid, { questionDoctor: Q1 })).messageId;
+  const q2 = (await u.sendQuestion(sid, { questionDoctor: Q2 })).messageId;
+  const replies = await new Promise((ok, ng) => {
+    const timer = setTimeout(() => { stop(); ng(new Error("待ちきれない: Q1・Q2 の両方への答え")); }, 40000);
+    const stop = u.watchMessages(sid, (msgs) => {
+      const r = msgs.filter((m) => m.from === "patient" && m.replyTo && [q1, q2].includes(m.replyTo) && ["sent", "received"].includes(m.status));
+      if (r.length === 2) { clearTimeout(timer); stop(); ok(r); }
+    });
+  });
+  check(replies.find((m) => m.replyTo === q2)?.original === Q2_ANSWER && replies.find((m) => m.replyTo === q1)?.original === Q1_ANSWER,
+    "2つの質問への答えが、それぞれ正しい質問に結びつく（replyTo）");
 
   // ── シナリオ D: 「没事」の意味が文脈で決まらない → 患者本人が選ぶ。医師は未検証の内容を見られる ──
   await doctorSays(D_ASK);
@@ -226,7 +261,9 @@ async function doctorFlow() {
 
   await click("button", "カルテにコピー");
   const k = (await waitFor(() => $("dialog.d-sheet textarea"), "カルテ")).value;
-  check(k.includes("■主訴") && k.includes("めまい：周囲がぐるぐる回る（回転性）［医］"), "カルテ: 主訴・医師確認済み");
+  check(k.includes("■主訴") && k.includes("めまい：気が遠くなる（失神前）［医］")
+    && !k.split("\n").slice(2).some((l) => l.includes("［要再確認］")), // 2行目までは印の説明
+    "カルテ: 主訴・医師確認済み（直した答えを医師がもう一度確認した内容）");
   check(k.includes("認識の相違の可能性（AI判定）／医師: 再説明が必要") && k.includes("説明と一致（AI判定）／医師が理解を確認"), "カルテ: 理解の確認");
   check(!k.includes("貧血"), "カルテ: 原文に無いものは無い");
   type($("dialog.d-sheet textarea"), k + "\n医師メモ: 追記");
@@ -260,6 +297,23 @@ async function patientFlow(sid) {
     "確認質問・選択肢・分からない・どれでもない");
   await click(".p-doctor .p-option", "天旋地转");
   await waitFor(() => text().includes("你的回答"), "答えを送った");
+
+  // ── 医師が確認済みにした後で、答えを直す（「修改回答」）──
+  await waitFor(() => events.has("confirmed"), "医師が確認済みにした", 30000);
+  await click(".btn-link", "修改回答");
+  await click(".p-doctor .p-option", "快要晕过去");
+  await waitFor(() => text().includes("你的回答") && !byText(".p-doctor .p-option", "快要晕过去"), "直した答えを送った");
+  check(true, "医師が確認した後でも、答えを直せる");
+
+  // ── 続けて2つ質問される（レビュー指摘2）──
+  await waitFor(() => byText(".p-doctor", Q1) && byText(".p-doctor", Q2), "2つの質問");
+  await patientSays(Q2_ANSWER); // 文字の答えは一番新しい質問（Q2）への答え
+  await waitFor(() => text().includes("医生看到的是") || text().includes("医生已读") || !byText(".p-doctor", Q2), "Q2 に答えた");
+  const stillQ1 = await waitFor(() => byText(".p-doctor", Q1), "Q2 に答えても Q1 は残る", 8000);
+  check(stillQ1 && !byText(".p-doctor", Q2), "未回答の Q1 は出たまま、答えた Q2 は消える");
+  await patientSays(Q1_ANSWER);
+  await waitFor(() => !byText(".p-doctor", Q1), "Q1 にも答えた");
+  check(true, "未回答の質問に、あとから答えられる");
 
   // ── D: 「没事」→ 自分の発言の意味を選ぶ ──
   await waitFor(() => byText(".p-doctor", "要给你打止痛针吗"), "医師の質問 D");

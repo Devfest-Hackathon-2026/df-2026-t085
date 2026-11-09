@@ -30,11 +30,12 @@ firebase deploy --config firebase.staging.json --only firestore:staging --projec
 **このブランチの `firestore.rules` を `(default)` に公開してはいけない。** Safety Gate を迂回できないよう、端末が `status: sent` を書くことを禁止したので、
 以前の画面（main）では患者が送れなくなる。本番に入れるときは、新しい画面とルールを同時に切り替える。
 
-公開する前に、本物のルールエンジンでルールを確かめられる（Java 11 以上と firebase-tools が要る）:
+公開する前に、本物のルールエンジンでルールを確かめられる（Java 21 と firebase-tools が要る。2026-11-10 にエミュレーターで 10 件成功）:
 
 ```powershell
-npm i --no-save firebase-tools@14 @firebase/rules-unit-testing@4 firebase@10
+npm i --no-save firebase-tools@14 @firebase/rules-unit-testing@4 firebase@11
 npm run test:rules
+npm run test:emulator   # サーバーの pytest を、偽の Firestore ではなくエミュレーターで
 ```
 
 ## 3. API（Cloud Run の別サービス）

@@ -137,8 +137,11 @@ async def update(req: Request, authorization: str = Header(default="")):
     uid = uid_of(authorization)
     body = await req.json()
     path, data = _doc(body["path"]), _decode(body["data"])
+    expect = body.get("expect") or {}  # runTransaction の代わり: 読んだ値が expect のときだけ書く（同じロックの中で）
     with fakestore.LOCK:
         old = DB.store.get(path)
+        if old is not None and any(old.get(k) != v for k, v in expect.items()):
+            return {"ok": False, "skipped": True}
         if old is None or not _check_update(path, old, data, uid):
             raise HTTPException(403, "permission-denied")
         doc = DB.store[path]

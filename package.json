@@ -3,7 +3,8 @@
   "scripts": {
     "test": "node --test web/",
     "e2e": "node devtools/e2e.mjs",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-unsaid \"node --test tests/rules/\""
+    "test:rules": "firebase emulators:exec --only firestore --project demo-unsaid \"node --test tests/rules/\"",
+    "test:emulator": "firebase emulators:exec --only firestore --project demo-unsaid \".venv/bin/python -m pytest tests/\""
   },
   "dependencies": {
     "firebase": "^13.2.0"

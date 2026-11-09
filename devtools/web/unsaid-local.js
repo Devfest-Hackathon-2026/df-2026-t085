@@ -161,8 +161,18 @@ export async function answer(sid, mid, type, text = "") {
 }
 
 export const send = (sid, mid) => callApi("/send", sid, mid);
-export const receive = (sid, mid) =>
-  dev("/_dev/update", { path: `sessions/${sid}/messages/${mid}`, data: { status: "received", receivedAt: TS } });
+// web/unsaid.js と同じ: 端末の中で二重に始めず、サーバーで status が sent のときだけ書く（トランザクションの代わりに expect）
+const receiving = new Set();
+export async function receive(sid, mid) {
+  if (receiving.has(mid)) return;
+  receiving.add(mid);
+  try {
+    await dev("/_dev/update", { path: `sessions/${sid}/messages/${mid}`, data: { status: "received", receivedAt: TS }, expect: { status: "sent" } });
+  } catch (e) {
+    receiving.delete(mid);
+    throw e;
+  }
+}
 export function retry(sid, m) {
   const path = m.from === "patient" && !m.clarification?.answer ? "/analyze" : "/translate";
   return callApi(path, sid, m.id);

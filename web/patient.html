@@ -16,6 +16,7 @@
 <script type="module">
 import * as unsaid from "./unsaid.js";
 import { h, icon, MIC_SVG, STOP_SVG, highlight, toast, micController, buildMemo, isConfirmed, ATTRS, stuckWatch } from "./ui.js";
+import { speakState } from "./patient-view.js";
 
 // 患者の画面の文言（PATIENT_LANGS と同じ言語）。確認質問・選択肢はサーバーが患者の言語で作る
 const T = {
@@ -109,7 +110,6 @@ const S = {
   pendingLang: null, // 言語を選んだ後、同意する前
   reopen: null,      // 「回答を直す」で開き直した確認質問の id
 };
-const isQuestion = (m) => m.from === "doctor" && (m.kind === "clarify" || m.kind === "teachback");
 let t = T.en;
 let mic;
 let watch; // 待ちのまま止まった発言を見つける（ui.js）
@@ -156,22 +156,12 @@ function view() {
     if (active.status === "clarifying") return { name: "wait", m: active, text: t.translating, step: 2 };
     if (active.status === "confirmed") return { name: "confirm", m: active };
   }
-  const lastSent = mine.filter((m) => ["sent", "received"].includes(m.status)).at(-1) ?? null;
-  // 自分が最後に送った後の医師の発言をすべて見せる（続けて2つ聞かれても1つ目が消えないように）
-  const after = lastSent ? S.msgs.indexOf(lastSent) : -1;
-  let doctors = S.msgs.filter((m, i) => i > after && m.from === "doctor" && ["sent", "received"].includes(m.status));
-  // 「回答を直す」: 答えた確認質問をもう一度開く（医師がその後に何も言っていないときだけ）
-  const reopened = !doctors.length && S.reopen && S.msgs.find((m) => m.id === S.reopen);
-  if (reopened) doctors = [reopened];
-  // 答える質問 = 医師の確認質問・理解の確認のうち一番新しいもの。話した言葉はその答えになる
-  const openQ = doctors.filter(isQuestion).at(-1) ?? null;
-  const q = lastSent?.replyTo && S.msgs.find((m) => m.id === lastSent.replyTo);
-  const answeredQ = !doctors.length && q?.kind === "clarify" ? q : null; // 「回答を直す」を出す
-  return { name: "speak", doctors, openQ, answeredQ, lastSent: doctors.length ? null : lastSent };
+  // どの医師の発言を出し、どの質問に答えるか（質問ごとに、答えが届いたかで判定する。web/patient-view.js）
+  return { name: "speak", ...speakState(S.msgs, S.reopen) };
 }
 
 function keyOf(v) {
-  return JSON.stringify([canSpeak, memoItems().length, v.name, v.m?.id, v.m?.status, v.doctors?.map((d) => d.id).join(), v.lastSent?.id, v.lastSent?.status, S.mic, S.busy, S.freeText, S.lang, S.pendingLang, v.openQ?.id, S.reopen, S.online]);
+  return JSON.stringify([canSpeak, memoItems().length, v.name, v.m?.id, v.m?.status, v.doctors?.map((d) => d.id).join(), v.lastSent?.id, v.lastSent?.status, S.mic, S.busy, S.freeText, S.lang, S.pendingLang, v.openQ?.id, [...(v.openIds ?? [])].join(), S.reopen, S.online]);
 }
 
 function render(force = false) {
@@ -231,7 +221,7 @@ const screens = {
         n ? h("button", { class: "p-memo-btn", onclick: openMemo }, `${t.memo} (${n})`) : h("span"),
         dot()),
       h("div", { class: "p-body" },
-        v.doctors.map((d, i) => doctorCard(d, i < v.doctors.length - 1 && d !== v.openQ, d === v.openQ)),
+        v.doctors.map((d, i) => doctorCard(d, i < v.doctors.length - 1 && !v.openIds.has(d.id), v.openIds.has(d.id))),
         v.lastSent && h("div", { class: "p-status" },
           icon(v.lastSent.status === "received" ? "check-check" : "check"), v.lastSent.status === "received" ? t.read : t.sent),
         // 送った後に、医師に届いた内容を自分の言語で見られる（承認はもう求めない）。違っていたら言い直す

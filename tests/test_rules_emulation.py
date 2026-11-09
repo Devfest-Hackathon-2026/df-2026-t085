@@ -67,3 +67,25 @@ def test_bypass_updates_are_refused(old, data, uid):
 def test_session_audit_cannot_be_written_by_clients():
     old = {"members": ["doc", "pat"], "patientLang": "zh-CN", "createdAt": datetime.now(timezone.utc)}
     assert not rules.check_update("sessions/s1", old, {"audit": {"issues": []}}, "doc", session_of)
+
+
+def test_duplicate_received_is_refused():
+    """重複イベント: 既読をもう一度既読にはできない（端末は web/unsaid.js の receive でトランザクションを使う）。"""
+    assert not update({"from": "patient", "status": "received"}, {"status": "received", "receivedAt": "__TS__"}, "doc")
+
+
+@pytest.mark.parametrize("data", [
+    {"meaning.status": "error"},                                       # やり直しの lease を外す
+    {"meaning.retry_run": "mine"},                                     # 所有者になりすます
+    {"meaning": {"status": "ready", "facts": []}},                     # 問診メモ・再確認の印を書く
+])
+@pytest.mark.parametrize("uid", ["doc", "pat"])
+def test_retry_lease_and_meaning_cannot_be_written_by_clients(data, uid):
+    old = {"from": "patient", "status": "sent", "meaning": {"status": "retrying", "retry_run": "server"}}
+    assert not update(old, data, uid)
+
+
+@pytest.mark.parametrize("kind", ["clarify", "teachback"])
+def test_doctor_cannot_create_questions_directly(kind):
+    assert not create({**BASE, "from": "doctor", "kind": kind}, "doc")
+    assert not create({**BASE, "from": "doctor", "kind": kind, "status": "sent"}, "doc")

@@ -48,6 +48,9 @@ MAX_CHARS = 1000  # 1発言の上限。長すぎる入力でトークンを使�
 # 画面は 25 秒待っても進まないと「もう一度」を出す（web/ui.js の STUCK_MS）。押されたときにまだ処理中なら 409 で何もしない。
 # サーバーが途中で落ちて印が残っても、この時間が過ぎれば「もう一度」でやり直せる
 LOCK_SEC = 110  # 意図の解析・照合・訳し直し・再照合まで含めても収まる長さ（Cloud Run の --timeout 120 より短く）
+# 意味の解析のやり直しの期限（lease）。Cloud Run の --timeout 120 より長くし、期限が切れた再試行のリクエストはもう
+# 終わっている（またはサーバーが止まった）とみなして、ほかの人がやり直せるようにする。古い処理の書き戻しは所有者 ID で防ぐ。
+RETRY_LEASE_SEC = 130
 # 確認質問を作る呼び出しが失敗したとき、確認なしの翻訳で先に進める。医師画面の注意書きに出す（doctorLang は ja）
 NO_CHECK_NOTE = "自動の確認ができませんでした。あいまいな言葉がそのまま訳されている可能性があります。"
 # 問診の記録を残し続けないための期限。サーバーが書くたびに expireAt を「今から TTL_HOURS 後」にする。
@@ -518,6 +521,8 @@ def _reply_target(s_ref, msg):
     q = snap.to_dict() if snap.exists else None
     if not q or q.get("from") != "doctor" or q.get("kind") not in ("clarify", "teachback"):
         raise HTTPException(400, "replyTo は医師の確認質問か、理解の確認の発言にしてください")
+    if q.get("status") not in SHOWN:
+        raise HTTPException(400, "まだ届いていない質問には答えられません")
     a = msg.get("answer") or {"type": "free_text"}
     if a.get("type") not in ("option", "unsure", "none", "free_text"):
         raise HTTPException(400, "answer.type は option / unsure / none / free_text のどれかです")
@@ -769,6 +774,32 @@ def _gate_start(t0, s_ref, session, mid, m_ref, msg, role, question):
     return _gate_run(t0, s_ref, session, mid, m_ref, msg, role, question, msgs, gate)
 
 
+def _lease_expired(until):
+    """lease の期限（ISO 文字列）が過ぎたか。期限の無い古いデータは切れたとみなす（永久に止まらないように）。"""
+    try:
+        return datetime.fromisoformat(until) <= datetime.now(timezone.utc)
+    except (TypeError, ValueError):
+        return True
+
+
+def _pending_from(question):
+    """確認質問への答えを Meaning Engine で解釈するための、質問の文脈（初回と再試行で同じものを使う）。"""
+    if not question or question.get("kind") != "clarify":
+        return None
+    c = question.get("clarify") or {}
+    return {"source_quote": c.get("source_quote", ""), "question_doctor_lang": question["original"],
+            "question_patient_lang": question["translation"]["text"], "unresolved": c.get("unresolved", "")}
+
+
+def _meaning_context(msgs, mid, ci):
+    """Meaning Engine に渡す直前の会話。本人が意図を確認していれば、その意味も足す（初回と再試行で同じ）。"""
+    ctx = _context(msgs, mid)
+    if ci:
+        ctx = ctx + [{"speaker": "patient",
+                      "text": f"（本人が確認した意味）{ci.get('meaning_listener') or ci.get('meaning_speaker')}"}]
+    return ctx
+
+
 def _gate_run(t0, s_ref, session, mid, m_ref, msg, role, question, msgs, gate, intent=None):
     """USSA の本体。
       1) Source Agent（意図と原文の枠）・Translation Agent（下書き）・Meaning Engine（患者の問診メモ）を並列に
@@ -794,14 +825,8 @@ def _gate_run(t0, s_ref, session, mid, m_ref, msg, role, question, msgs, gate, i
     f_mean = f_tb = None
     known = _known_quotes(msgs, mid)
     if role == "patient" and not is_tb:
-        ctx = _context(msgs, mid) + ([{"speaker": "patient", "text": f"（本人が確認した意味）{ci['meaning_listener'] or ci['meaning_speaker']}"}]
-                                     if ci else [])
-        pending = None
-        if question and question.get("kind") == "clarify":
-            c = question.get("clarify") or {}
-            pending = {"source_quote": c.get("source_quote", ""), "question_doctor_lang": question["original"],
-                       "question_patient_lang": question["translation"]["text"], "unresolved": c.get("unresolved", "")}
-        f_mean = unsaid_ai.submit(unsaid_ai.meaning, msg["original"], src_lang, dst_lang, ctx, known, pending)
+        f_mean = unsaid_ai.submit(unsaid_ai.meaning, msg["original"], src_lang, dst_lang,
+                                  _meaning_context(msgs, mid, ci), known, _pending_from(question))
     exp = dict(msgs).get(question["teachback"]["explanation_id"]) if is_tb else None
     try:
         # 1) 発話意図（Source Agent）
@@ -904,7 +929,12 @@ def _teachback_result(future, msg):
 
 
 def _after_send(s_ref, session, mid, role, intent, question):
-    """送った後: 答えを元の情報に結びつけ、会話全体を見直す（Conversation Auditor）。失敗しても送った発言はそのまま。"""
+    """送った後: 確認質問なら元の候補に結びつけ、答えなら元の情報に結びつけ、会話全体を見直す（Conversation Auditor）。
+    失敗しても送った発言はそのまま。"""
+    try:
+        _link_question(s_ref, mid)
+    except Exception as e:
+        log.warning("link question failed: %s", type(e).__name__)
     try:
         _apply_reply(s_ref, mid)
     except Exception as e:
@@ -1054,6 +1084,8 @@ def _apply_reply(s_ref, aid):
             _tx([q_ref], lambda d: [{"clarify.last_answer_id": aid}])
             return
         res = mean.get("resolution") or {}
+        sent = a.get("sentAt") or a.get("createdAt")
+        sent_at = sent.astimezone(timezone.utc).isoformat() if hasattr(sent, "astimezone") else str(sent or "")
         c = q["clarify"]
         refs = [q_ref]
         src_ref = _msg_ref(s_ref, c["source_message_id"]) if c.get("source_message_id") and c.get("candidate_id") else None
@@ -1070,7 +1102,8 @@ def _apply_reply(s_ref, aid):
                 try:
                     clinical.apply_answer(meaning, c["candidate_id"], message_id=aid, answer_type=a_type,
                                           resolves=res.get("resolves", "no"), meaning_doctor=res.get("meaning_doctor", ""),
-                                          source_quote=res.get("source_quote", ""))
+                                          source_quote=res.get("source_quote", ""),
+                                          sent_at=sent_at)
                 except (KeyError, clinical.TransitionError) as e:
                     log.warning("apply_answer skipped: %s", type(e).__name__)
                     return out + [None]
@@ -1134,15 +1167,103 @@ def send(ref: MessageRef, uid: str = Depends(current_uid)):
     return {"status": "sent"}
 
 
-def _question_doc(session, *, original, shown, kind, extra):
-    """医師の画面から送る、サーバーが作る医師の発言（確認質問・理解の確認）。訳はもうあるので status は sent。"""
+def _question_doc(session, *, original, shown, kind, extra, source):
+    """医師の画面から送る、サーバーが作る医師の発言（確認質問・理解の確認）で、訳がもうあるもの。status は sent。
+
+    この経路に来るのは、訳を新しく作らないものだけ:
+      source="candidate_pair" … Meaning Engine が確認候補と一緒に作った質問と選択肢の対訳を、医師がそのまま送る
+      source="fixed_text"     … 理解の確認の依頼文など、言語ごとに固定した文
+    訳の照合はしていないので、gate に PRETRANSLATED と記録する。医師が編集・自作した質問は _gate_question（照合を通す）。
+    """
     return {
         "from": "doctor", "kind": kind, "original": original, "status": "sent",
         "createdAt": firestore.SERVER_TIMESTAMP, "sentAt": firestore.SERVER_TIMESTAMP, "expireAt": _expire_at(),
         "translation": {"lang": session["patientLang"], "text": shown, "back_translation": original, "note": "",
                         "clarified_target": "", "clarified_answer": ""},
+        "gate": {"state": ussa.SENT, "source": source, "history": [{"at": ussa.now_iso(), "to": ussa.SENT, "by": "doctor",
+                                                                   "reason": source}],
+                 "verification": {"status": ussa.PRETRANSLATED, "issues": [], "failures": [], "at": ussa.now_iso(),
+                                  "note": {"candidate_pair": "確認候補の対訳（照合していない）",
+                                           "fixed_text": "固定の依頼文"}[source]}},
         kind: extra,
     }
+
+
+def _clarify_extra(session, *, source_message_id, candidate, fact_id, options, options_doctor, edited, issue_id):
+    return {
+        "source_message_id": source_message_id or "",
+        "candidate_id": candidate["candidate_id"] if candidate else "",
+        "fact_id": fact_id or "",  # 自作の質問: 送ったときに、この情報にひもづく候補を足す
+        "fact_ids": candidate["fact_ids"] if candidate else [],
+        "source_quote": candidate["source_quote"] if candidate else "",
+        "unresolved": candidate["unresolved"] if candidate else "",
+        "options": options,
+        "options_doctor": options_doctor,
+        "fixed": unsaid_ai.ANSWER_FIXED.get(session["patientLang"], unsaid_ai.ANSWER_FIXED["en"]),
+        "edited": edited,
+        "last_answer_id": "",
+        "issue_id": issue_id or "",
+        "linked": False,  # 元の候補・未解決事項を「質問送信済み」にしたか（届いたときに1回だけ）
+    }
+
+
+def _link_question(s_ref, qid):
+    """確認質問が患者に届いた（SENT）ときに1回だけ: 元の確認候補（自作なら候補を足す）と未解決事項を「質問送信済み」にする。
+    届く前（照合中・発言者の確認待ち・取り消し）には何も変えない。"""
+    q_ref = _msg_ref(s_ref, qid)
+    q = q_ref.get().to_dict() or {}
+    c = q.get("clarify") or {}
+    if q.get("kind") != "clarify" or q.get("status") not in SHOWN or c.get("linked"):
+        return
+    src_ref = _msg_ref(s_ref, c["source_message_id"]) if c.get("source_message_id") else None
+    holder = {}
+
+    def fn(datas):
+        qd = datas[0]
+        qc = qd.get("clarify") or {}
+        if qc.get("linked"):
+            raise _Stop("linked")
+        upd = {"clarify.linked": True}
+        out = [upd]
+        if src_ref is not None:
+            src = datas[1] or {}
+            meaning = src.get("meaning") or _empty_meaning()
+            try:
+                cand = None
+                if qc.get("candidate_id"):
+                    cand = clinical.find(meaning.get("candidates", []), "candidate_id", qc["candidate_id"])
+                else:  # 医師が自分で書いた質問: 届いたこの時点で候補を足す
+                    cand = clinical.custom_candidate(meaning, utterance_id=qc["source_message_id"],
+                                                     source_text=src.get("original", ""), fact_id=qc.get("fact_id") or None,
+                                                     question_doctor=qd["original"],
+                                                     question_patient=qd["translation"]["text"])
+                cand = clinical.mark_question_sent(meaning, cand["candidate_id"], qid, edited=bool(qc.get("edited")))
+                upd.update({"clarify.candidate_id": cand["candidate_id"], "clarify.fact_ids": cand["fact_ids"],
+                            "clarify.source_quote": cand["source_quote"]})
+                out.append({"meaning": meaning})
+            except (KeyError, TypeError, clinical.TransitionError) as e:
+                # 届いた後に候補が「無視」されていた等。質問はもう届いているので、記録だけ残して候補は変えない
+                log.warning("link question skipped: %s", type(e).__name__)
+                out.append(None)
+        holder["issue"] = qc.get("issue_id")
+        return out
+    try:
+        _tx([q_ref] + ([src_ref] if src_ref else []), fn)
+    except _Stop:
+        return
+    if holder.get("issue"):
+        _issue_event(s_ref, holder["issue"], "question_sent", ref=qid)
+
+
+def _pending_question_for(s_ref, msgs, candidate_id, source_message_id):
+    """同じ確認候補について、まだ届いていない（照合中・確認待ち・失敗）質問があるか。二重に送らないため。"""
+    for _, m in msgs:
+        c = m.get("clarify") or {}
+        if (m.get("kind") == "clarify" and c.get("candidate_id") == candidate_id
+                and c.get("source_message_id") == source_message_id
+                and m.get("status") in ("analyzing", "awaiting_intent", "needs_review", "error")):
+            return True
+    return False
 
 
 @app.post("/clarify/send")
@@ -1169,57 +1290,51 @@ def clarify_send(body: ClarifySend, uid: str = Depends(current_uid)):
         raise HTTPException(400, "candidateId か questionDoctor が必要です")
     edited = bool(q_text) and (cand is None or q_text != cand["question_doctor"])
 
+    if cand is not None and _pending_question_for(s_ref, _all_messages(s_ref), cand["candidate_id"], body.messageId):
+        raise HTTPException(409, "この確認候補の質問は、まだ送る前の確認中です")
+
     if edited:
+        # 医師が編集・自作した質問は、医師のほかの発言と同じく Safety Gate を通す（意図の解析・訳の照合・発言者の確認）。
+        # 届くまで元の候補・未解決事項は変えない（届いたときに _link_question）
+        t0 = time.time()
         _session(body.sessionId, uid)  # Gemini を使うので回数を数える
-        try:
-            out, _ = unsaid_ai.translate(q_text, session["doctorLang"], session["patientLang"], "doctor_to_patient")
-        except Exception:
-            log.warning("question translate failed")
-            raise HTTPException(502, "質問の翻訳に失敗しました。もう一度お試しください")
-        q_dr, q_pt, o_pt, o_dr = q_text, out["translation"], [], []
-    else:
-        q_dr, q_pt, o_pt, o_dr = cand["question_doctor"], cand["question_patient"], cand["options_patient"], cand["options_doctor"]
+        q_ref = s_ref.collection("messages").document()
+        q_ref.set({
+            "from": "doctor", "kind": "clarify", "original": q_text, "status": "analyzing",
+            "createdAt": firestore.SERVER_TIMESTAMP, "expireAt": _expire_at(),
+            "clarify": _clarify_extra(session, source_message_id=body.messageId, candidate=cand, fact_id=body.factId,
+                                      options=[], options_doctor=[], edited=True, issue_id=body.issueId),
+        })
+        res = _gate_start(t0, s_ref, session, q_ref.id, q_ref, _get(q_ref), "doctor", None)
+        log.info("clarify edited status=%s linked=%s", res.get("status"), bool(body.messageId))
+        # 届いたときに結びついた候補（自作なら届いたときに足した候補）。まだ届いていなければ ""
+        linked = ((_get(q_ref).get("clarify") or {}).get("candidate_id")) or (cand["candidate_id"] if cand else "")
+        return {**res, "messageId": q_ref.id, "candidateId": linked}
 
     q_ref = s_ref.collection("messages").document()
     doc = {}  # 作る質問の発言。候補が決まってから（トランザクションの中で）中身を入れる
 
     def fn(datas):
         c = cand
-        updates = []
-        if src_ref is not None:
-            meaning = datas[0].get("meaning") or _empty_meaning()
-            if c is None:  # 医師が自分で書いた質問（元の発言の情報にひもづける）
-                try:
-                    c = clinical.custom_candidate(meaning, utterance_id=body.messageId, source_text=datas[0]["original"],
-                                                  fact_id=body.factId, question_doctor=q_dr, question_patient=q_pt)
-                except KeyError:
-                    raise HTTPException(404, "情報（fact）がありません")
-            try:
-                c = clinical.mark_question_sent(meaning, c["candidate_id"], q_ref.id, edited=edited)
-            except (KeyError, clinical.TransitionError) as e:
-                raise HTTPException(409, f"この確認候補は送れません（{e}）")
-            updates.append({"meaning": meaning})
+        meaning = datas[0].get("meaning") or _empty_meaning()
+        try:
+            c = clinical.mark_question_sent(meaning, c["candidate_id"], q_ref.id, edited=False)
+        except (KeyError, clinical.TransitionError) as e:
+            raise HTTPException(409, f"この確認候補は送れません（{e}）")
         doc.clear()
-        doc.update(_question_doc(session, original=q_dr, shown=q_pt, kind="clarify", extra={
-            "source_message_id": body.messageId or "",
-            "candidate_id": c["candidate_id"] if c else "",
-            "fact_ids": c["fact_ids"] if c else [],
-            "source_quote": c["source_quote"] if c else "",
-            "unresolved": c["unresolved"] if c else "",
-            "options": o_pt,
-            "options_doctor": o_dr,
-            "fixed": unsaid_ai.ANSWER_FIXED.get(session["patientLang"], unsaid_ai.ANSWER_FIXED["en"]),
-            "edited": edited,
-            "last_answer_id": "",
-            "issue_id": body.issueId or "",
-        }))
-        return updates
+        extra = _clarify_extra(session, source_message_id=body.messageId, candidate=c, fact_id=None,
+                               options=cand["options_patient"], options_doctor=cand["options_doctor"], edited=False,
+                               issue_id=body.issueId)
+        extra["linked"] = True
+        doc.update(_question_doc(session, original=cand["question_doctor"], shown=cand["question_patient"],
+                                 kind="clarify", extra=extra, source="candidate_pair"))
+        return [{"meaning": meaning}]
 
-    _tx([src_ref] if src_ref else [], fn, create=(q_ref, doc))
+    _tx([src_ref], fn, create=(q_ref, doc))
     if body.issueId:
         _issue_event(s_ref, body.issueId, "question_sent", ref=q_ref.id)
-    log.info("clarify sent edited=%s linked=%s", edited, bool(src_ref))
-    return {"messageId": q_ref.id, "candidateId": doc["clarify"]["candidate_id"]}
+    log.info("clarify sent (candidate pair)")
+    return {"status": "sent", "messageId": q_ref.id, "candidateId": doc["clarify"]["candidate_id"]}
 
 
 @app.post("/clarify/update")
@@ -1284,7 +1399,7 @@ def teachback_start(ref: TeachbackStart, uid: str = Depends(current_uid)):
     now = clinical.now_iso()
     doc = _question_doc(session, original=unsaid_ai.TEACHBACK_PROMPT[session["doctorLang"]],
                         shown=unsaid_ai.TEACHBACK_PROMPT.get(lang, unsaid_ai.TEACHBACK_PROMPT["en"]),
-                        kind="teachback", extra={
+                        kind="teachback", source="fixed_text", extra={
                             "explanation_id": ref.messageId, "status": clinical.T_ASKED, "answer_message_id": "",
                             "previous_id": ref.previousId or "",
                             "result": None, "history": [{"at": now, "by": "doctor", "event": "requested"}]})
@@ -1341,16 +1456,61 @@ def teachback_resolve(body: TeachbackAction, uid: str = Depends(current_uid)):
 
 @app.post("/meaning/retry")
 def meaning_retry(ref: MessageRef, uid: str = Depends(current_uid)):
-    """意味の解析だけが失敗した発言（meaning.status = error）をやり直す。原文と翻訳はそのまま。"""
+    """意味の解析だけが失敗した発言（meaning.status = error）をやり直す。原文と翻訳はそのまま。
+
+    初回と同じ文脈（直前の会話・本人が確認した意図・答えている確認質問）で解析し、成功したら、送信済みの答えを
+    元の質問・確認候補・情報に結びつける（_apply_reply。同じ答えは2回入らない）。
+    医師が答えを見て確認済み・要修正にした情報は変えない／判断の後に届いた答えなら「再確認が必要」にする
+    （clinical.apply_answer。送った時刻と医師の判断の時刻で決める）。
+
+    同時に2本は走らせない: 所有者 ID（retry_run）と期限（retry_until、RETRY_LEASE_SEC）を付けて始める。
+    サーバーが止まって「やり直し中」のまま残っても、期限が切れたら別のリクエストが引き継げる。
+    引き継がれた古い処理は、保存のトランザクションで所有者が違うと分かるので書き戻さない（409）。"""
     s_ref, session, m_ref, msg = _load(ref, uid)
-    if msg.get("from") != "patient" or (msg.get("meaning") or {}).get("status") != "error":
+    if msg.get("from") != "patient":
         raise HTTPException(409, "やり直す必要はありません")
-    msgs = _all_messages(s_ref)
-    known = _known_quotes(msgs, ref.messageId)
-    f = unsaid_ai.submit(unsaid_ai.meaning, msg["original"], session["patientLang"], session["doctorLang"],
-                         _context(msgs, ref.messageId), known, None)
-    meaning = _meaning_result(f, msg, ref.messageId, session, known)
-    m_ref.update({"meaning": meaning, "facts": clinical.legacy_facts(meaning)})
+
+    run = uuid.uuid4().hex  # この再試行の所有者 ID
+
+    def claim(m):  # 同時に2本やり直さない。期限（lease）が切れた「やり直し中」は、止まったものとして引き継ぐ
+        cur = m.get("meaning") or {}
+        if cur.get("status") == "retrying" and not _lease_expired(cur.get("retry_until")):
+            raise HTTPException(409, "いま整理し直しています")
+        if cur.get("status") not in ("error", "retrying"):
+            raise HTTPException(409, "やり直す必要はありません")
+        until = datetime.now(timezone.utc) + timedelta(seconds=RETRY_LEASE_SEC)
+        return {"meaning.status": "retrying", "meaning.retry_run": run, "meaning.retry_until": until.isoformat(),
+                "meaning.retry_taken_over": cur.get("retry_run") if cur.get("status") == "retrying" else None}
+    _transact(m_ref, claim)
+
+    def mine(datas):
+        cur = (datas[0] or {}).get("meaning") or {}
+        return cur.get("status") == "retrying" and cur.get("retry_run") == run
+
+    try:
+        msgs = _all_messages(s_ref)
+        known = _known_quotes(msgs, ref.messageId)
+        question = dict(msgs).get(msg.get("replyTo")) if msg.get("replyTo") else None
+        intent = (msg.get("gate") or {}).get("intent") or {}
+        c = intent.get("confirmed") if intent.get("state") == ussa.USER_CONFIRMED else None
+        f = unsaid_ai.submit(unsaid_ai.meaning, msg["original"], session["patientLang"], session["doctorLang"],
+                             _meaning_context(msgs, ref.messageId, c), known, _pending_from(question))
+        meaning = _meaning_result(f, msg, ref.messageId, session, known)
+    except Exception as e:
+        # 解析の外で失敗した: まだ自分が持ち主なら「失敗」に戻して、すぐやり直せるようにする（期限を待たせない）
+        log.warning("meaning retry failed: %s", type(e).__name__)
+        _tx([m_ref], lambda d: [{"meaning.status": "error"} if mine(d) else None])
+        raise
+
+    def save(datas):  # AI の後に最新を読み直す: この再試行がまだ持ち主のときだけ書く（古い meaning 全体で上書きしない）
+        if not mine(datas):
+            raise HTTPException(409, "この解析のやり直しは、ほかの処理に引き継がれました")
+        return [{"meaning": meaning, "facts": clinical.legacy_facts(meaning)}]
+    _tx([m_ref], save)
+    # 元の候補・fact への反映は _apply_reply のトランザクションの中で最新を読み直して行う（医師の確認・要修正、
+    # 患者が後から直した答えは変えない。同じ答えは2回入らない）
+    if meaning["status"] == "ready" and question:
+        _apply_reply(s_ref, ref.messageId)
     return {"status": meaning["status"]}
 
 

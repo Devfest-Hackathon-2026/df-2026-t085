@@ -19,7 +19,7 @@ import * as unsaid from "./unsaid.js";
 import { h, icon, MIC_SVG, STOP_SVG, toast, micController, stuckWatch } from "./ui.js";
 import {
   clinicalMemo, candidates, teachbacks, karteText, CATEGORY_LABEL, STATUS_LABEL, EVENT_LABEL, ATTR_ORDER, TB_LABEL,
-  verificationOf, unverified, activeIssues, ISSUE_LABEL, ISSUE_STATUS_LABEL,
+  verificationOf, unverified, activeIssues, ISSUE_LABEL, ISSUE_STATUS_LABEL, recheckRequired,
 } from "./clinical.js";
 
 const LANG_NAME = { en: "英語", "zh-CN": "中国語", vi: "ベトナム語" };
@@ -257,6 +257,21 @@ function mine(m, last) {
     m.status === "needs_review" && reviewCard(m));
 }
 
+// 言い直すとき、文を元の入力に戻す。確認質問なら、普通の発言ではなく元の確認候補・情報・未解決事項の質問欄に戻す
+function restoreDraft(m, text) {
+  const c = m.kind === "clarify" ? m.clarify : null;
+  if (!c) { input.value = text; input.focus(); return; }
+  if (c.candidate_id && c.source_message_id) {
+    S.editing = `${c.source_message_id}:${c.candidate_id}`;
+    S.editText = text;
+  } else {
+    S.asking = c.issue_id ? { issueId: c.issue_id, label: "未解決事項", text }
+      : { mid: c.source_message_id, fid: c.fact_id, label: "質問", text };
+  }
+  S.candOpen = S.issueOpen = true;
+  paintMemo();
+}
+
 // 自分の発言の意味が文脈で決まらないとき（Translation Intent Clarification）。選ぶ・自分の言葉で説明する・言い直す
 function intentCard(m) {
   const it = m.gate.intent;
@@ -268,8 +283,7 @@ function intentCard(m) {
   });
   const rephrase = () => act(k, async () => {
     const r = await unsaid.chooseIntent(sid, m.id, "none");
-    input.value = r?.original ?? m.original;
-    input.focus();
+    restoreDraft(m, r?.original ?? m.original);
   });
   const own = S.intentOwn === m.id || !it.interpretations?.length;
   const ta = own && h("textarea", { id: `intent-${m.id}`, rows: 2, placeholder: "伝えたい意味を書く", "aria-label": "伝えたい意味",
@@ -297,8 +311,7 @@ function reviewCard(m) {
   const send = () => act(k, () => unsaid.reviewMessage(sid, m.id, "send_unverified"));
   const rephrase = () => act(k, async () => {
     const r = await unsaid.reviewMessage(sid, m.id, "rephrase");
-    input.value = r?.original ?? m.original;
-    input.focus();
+    restoreDraft(m, r?.original ?? m.original);
   });
   return h("div", { class: "d-tbres warn" },
     h("div", { class: "h" }, icon("triangle-alert"),
@@ -348,6 +361,9 @@ function patient(m, latest) {
     unv && h("div", { class: "d-note" }, "この訳は照合で相違が残ったまま、患者が「未検証として送る」を選んだものです。原文を確認してください。",
       h("div", { lang: S.session?.patientLang }, `原文: ${m.original}`)),
     m.meaning?.status === "error" && h("div", { class: "d-note" }, "問診メモへの整理に失敗しました（原文と訳はそのままです）。",
+      h("button", { class: "btn-link", onclick: () => act(`mr:${m.id}`, () => unsaid.retryMeaning(sid, m.id)) }, "もう一度整理する")),
+    // やり直し中のまま止まった（サーバーの停止など）とき用。期限（lease）内ならサーバーが断るので二重には走らない
+    m.meaning?.status === "retrying" && h("div", { class: "d-note" }, "問診メモに整理し直しています。止まったままのときは、もう一度押してください。",
       h("button", { class: "btn-link", onclick: () => act(`mr:${m.id}`, () => unsaid.retryMeaning(sid, m.id)) }, "もう一度整理する")),
     open && h("div", { class: "d-orig", lang: S.session?.patientLang }, m.original),
     q?.kind === "teachback" && tbCard(m, q));
@@ -427,6 +443,7 @@ function marks(f, chief, msg) {
     f.status === "unconfirmed" && tag("未確認", "warn"),
     f.status === "patient_answered" && tag("患者回答", "ok"),
     f.status === "needs_correction" && tag("要修正", "bad"),
+    recheckRequired(f) && tag("再確認が必要", "bad"),
     f.status === "doctor_confirmed" && h("span", { class: "check", role: "img", "aria-label": "医師確認済み", title: "医師確認済み" }, icon("check")),
     msg && unverified(msg) && tag("訳未検証", "warn"),
   ];
@@ -458,6 +475,11 @@ function evidence(it) {
     row("原文", h("span", { class: "src", lang: S.session?.patientLang }, src)),
     row("訳", m.translation?.text ?? ""),
     row("状態", STATUS_LABEL[f.status] ?? f.status, f.legacy ? "" : "（AI の抽出は原文に実在する部分だけを採用）"),
+    // 医師の判断の後に届いた新しい答え: 医師が判断したときの内容と新しい答えを並べる（医師がもう一度判断するまで）
+    (f.rechecks ?? []).filter((r) => r.required).map((r) => row("再確認",
+      `${time(r.doctor_at)} に${r.doctor_event === "doctor_flag" ? "要修正" : "確認済み"}にした後、新しい答えが届きました。`,
+      r.doctor_resolved_meaning ? `判断したときの内容「${r.doctor_resolved_meaning}」→ ` : "",
+      r.new_meaning ? `新しい答え「${r.new_meaning}」` : "新しい答え: 患者は確定できず")),
     f.history?.length > 0 && row("履歴", h("ol", {}, f.history.map((e) => h("li", {},
       `${time(e.at)} ${EVENT_LABEL[e.event] ?? e.event}`, e.event === "patient_answered" && e.detail ? `「${e.detail}」` : "")))),
     !f.legacy && h("div", { class: "acts" },
@@ -555,9 +577,8 @@ function candCard(c) {
       if (!text) return;
       q.questionDoctor = text;
     }
-    await unsaid.sendQuestion(sid, q);
+    questionToast(await unsaid.sendQuestion(sid, q));
     S.editing = null;
-    toast("患者のスマホに質問を送りました");
   });
   const update = (action) => act(k, () => unsaid.updateCandidate(sid, c.mid, c.candidate_id, action));
   const ta = editing && h("textarea", { id: `edit-${k}`, rows: 2, "aria-label": "確認質問を編集",
@@ -583,6 +604,14 @@ function candCard(c) {
       h("button", { class: "btn-link", disabled: busy, onclick: () => update("dismiss") }, "無視")));
 }
 
+// 編集・自作した確認質問は、医師のほかの発言と同じく照合（Safety Gate）を通る。届いたかどうかで伝え方を変える
+// （意味の確認・照合の確認が要るときは、会話の「確認質問」の吹き出しの下にカードが出る）
+function questionToast(r) {
+  toast(!r?.status || r.status === "sent" ? "患者のスマホに質問を送りました"
+    : r.status === "stopped" ? "質問は送られませんでした"
+    : "質問はまだ送っていません。会話の確認質問の下で確認してください");
+}
+
 // 医師が自分で書く確認質問（問診メモの項目から）。患者の言語に訳して送り、答えをその項目に結びつける
 function askBox() {
   const a = S.asking;
@@ -593,9 +622,8 @@ function askBox() {
   const send = () => act(k, async () => {
     if (!a.text.trim()) return;
     await unsaid.sendQuestion(sid, a.issueId ? { issueId: a.issueId, questionDoctor: a.text.trim() }
-      : { messageId: a.mid, factId: a.fid, questionDoctor: a.text.trim() });
+      : { messageId: a.mid, factId: a.fid, questionDoctor: a.text.trim() }).then(questionToast);
     S.asking = null;
-    toast("患者のスマホに質問を送りました");
   });
   return h("div", { class: "d-cand d-ask" },
     h("div", { class: "q" }, `「${a.label}」について質問`), ta,

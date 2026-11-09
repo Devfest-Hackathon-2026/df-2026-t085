@@ -439,11 +439,49 @@ def mark_question_sent(meaning, candidate_id, question_message_id, *, edited=Fal
     return c
 
 
-def apply_answer(meaning, candidate_id, *, message_id, answer_type, resolves, meaning_doctor, source_quote="", at=None):
+# 答えを送った時刻と医師の判断の時刻の比較で見込む時計のずれ。この幅に入るときは「医師は答えを見ていない」とみなす（安全側）
+SEEN_MARGIN_SEC = 1.0
+
+
+def _parse_at(v):
+    try:
+        t = datetime.fromisoformat(v)
+        return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def last_doctor_decision(fact):
+    """fact に対する医師の最後の判断（確認済み・要修正）の履歴。無ければ None。"""
+    return next((h for h in reversed(fact.get("history", []))
+                 if h.get("by") == "doctor" and h.get("event") in ("doctor_confirm", "doctor_flag")), None)
+
+
+def _seen_by_doctor(sent_at, decision):
+    """答え（sent_at に送った）が、医師の判断の前に届いていたか。時刻が分からなければ「見ていない」（再確認へ）。"""
+    s, d = _parse_at(sent_at), _parse_at((decision or {}).get("at"))
+    return bool(s and d) and (d - s).total_seconds() >= SEEN_MARGIN_SEC
+
+
+def recheck_required(fact):
+    return any(r.get("required") for r in fact.get("rechecks", []))
+
+
+def apply_answer(meaning, candidate_id, *, message_id, answer_type, resolves, meaning_doctor, source_quote="", at=None,
+                 sent_at=""):
     """患者の回答（送信済み）を元の発言の確認候補と fact に結びつける。同じ回答を2回当てても変わらない。
 
     answer_type: option / free_text / unsure / none。resolves: yes / partly / no。
     「分からない」「どれでもない」・答えになっていない回答では、fact を確定しない（未確認のまま）。
+    sent_at（答えを送った時刻）:
+      - answers は送った順に並べる（最後が今の答え）。後から送った答えがもう当たっていれば（解析のやり直しが、
+        患者が答えを直した後に終わったとき）、記録だけ送った順の位置に残し、候補と fact は変えない。
+      - 医師が確認済み・要修正にした fact:
+          医師の判断より前に届いていた答え（医師は原文と訳を見て判断した。解析が遅れて終わっただけ）
+            → 状態と内容は変えず、届いたことを履歴に残す（patient_answered_late）
+          医師の判断の後に届いた答え（または時刻が分からない）
+            → 患者回答ありに戻し、「再確認が必要」（rechecks）を付ける。医師の判断の履歴は消さず、
+              医師が判断したときの答え・新しい答え・医師の判断を rechecks に結びつけて残す
     """
     at = at or now_iso()
     c = find(meaning["candidates"], "candidate_id", candidate_id)
@@ -452,8 +490,16 @@ def apply_answer(meaning, candidate_id, *, message_id, answer_type, resolves, me
     if any(a["message_id"] == message_id for a in c["answers"]):
         return c  # もう当てた（/send とバックグラウンドの解析の両方から呼ばれる）
     settled = answer_type in ("option", "free_text") and resolves in ("yes", "partly") and bool(meaning_doctor)
-    c["answers"].append({"message_id": message_id, "type": answer_type, "resolves": resolves if settled else "no",
-                         "meaning_doctor": meaning_doctor if settled else "", "source_quote": source_quote, "at": at})
+    entry = {"message_id": message_id, "type": answer_type, "resolves": resolves if settled else "no",
+             "meaning_doctor": meaning_doctor if settled else "", "source_quote": source_quote, "at": at,
+             "sent_at": sent_at}
+    newer = next((a for a in c["answers"] if sent_at and a.get("sent_at") and a["sent_at"] > sent_at), None)
+    if newer:
+        entry["superseded_by"] = newer["message_id"]
+        c["answers"].insert(c["answers"].index(newer), entry)
+        return c  # 古い答え: 新しい答えで決まった候補と fact を巻き戻さない
+    previous = c["answers"][-1] if c["answers"] else None
+    c["answers"].append(entry)
     if c["status"] not in (C_ASKED, C_ANSWERED, C_UNRESOLVED):
         return c  # 医師が「無視」した後に届いた回答。記録だけ残す
     apply_candidate_event(c, "answer_resolved" if settled else "answer_unresolved", by="patient", at=at, ref=message_id)
@@ -461,6 +507,20 @@ def apply_answer(meaning, candidate_id, *, message_id, answer_type, resolves, me
         f = find(meaning["facts"], "fact_id", fid)
         if not f:
             continue
+        before = None
+        if f["status"] in (DOCTOR_CONFIRMED, NEEDS_CORRECTION):
+            decision = last_doctor_decision(f)
+            if _seen_by_doctor(sent_at, decision):
+                f.setdefault("history", []).append({"at": at, "by": "patient", "event": "patient_answered_late",
+                                                    "ref": message_id,
+                                                    "detail": meaning_doctor if settled else answer_type})
+                continue
+            seen = [a for a in c["answers"] if a is not entry and _seen_by_doctor(a.get("sent_at"), decision)]
+            before = {"doctor_status": f["status"], "doctor_event": (decision or {}).get("event", ""),
+                      "doctor_at": (decision or {}).get("at", ""), "doctor_note": (decision or {}).get("detail", ""),
+                      "doctor_answer_id": seen[-1]["message_id"] if seen else "",
+                      "doctor_resolved_meaning": f.get("resolved_meaning", ""),
+                      "previous_answer_id": previous["message_id"] if previous else ""}
         if settled:
             apply_fact_event(f, "patient_answered", at=at, ref=message_id, detail=meaning_doctor)
             f["resolved_meaning"] = meaning_doctor if resolves == "yes" else f"{meaning_doctor}（一部未確定）"
@@ -468,6 +528,12 @@ def apply_answer(meaning, candidate_id, *, message_id, answer_type, resolves, me
         else:
             apply_fact_event(f, "patient_unsure", at=at, ref=message_id, detail=answer_type)
             f["clarification_status"] = "unresolved"
+        if before:
+            f.setdefault("rechecks", []).append({**before, "required": True, "new_answer_id": message_id,
+                                                 "new_meaning": meaning_doctor if settled else "", "at": at,
+                                                 "resolved_at": "", "resolved_by": ""})
+            f["history"].append({"at": at, "by": "system", "event": "recheck_required", "ref": message_id,
+                                 "detail": before["doctor_event"]})
     return c
 
 
@@ -476,6 +542,11 @@ def doctor_fact_action(meaning, fact_id, action, at=None, note=""):
     f = find(meaning["facts"], "fact_id", fact_id)
     if f is None:
         raise KeyError(fact_id)
+    at = at or datetime.now(timezone.utc).isoformat()  # 答えの送信時刻と比べるので秒より細かく
+    if action in ("confirm", "flag", "reset"):
+        for r in f.get("rechecks", []):
+            if r.get("required"):  # 医師がもう一度判断した（記録は残す）
+                r.update(required=False, resolved_at=at, resolved_by=action)
     if action == "confirm":
         apply_fact_event(f, "doctor_confirm", at=at, detail=note or None)
     elif action == "flag":

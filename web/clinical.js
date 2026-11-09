@@ -16,7 +16,11 @@ export const EVENT_LABEL = {
   extracted: "AIが抽出", ambiguity_found: "AIが曖昧さを指摘", question_sent: "確認質問を送信",
   patient_answered: "患者が回答", patient_unsure: "患者は確定できず", doctor_confirm: "医師が確認",
   doctor_flag: "医師が要修正に", doctor_reset: "医師が取り消し", candidate_dismissed: "医師が確認を省略",
+  patient_answered_late: "医師の判断の前に届いていた答えの整理が完了",
+  recheck_required: "医師の判断の後に新しい答え（再確認が必要）",
 };
+// 医師が確認済み・要修正にした後に、患者から新しい答えが届いた（医師がもう一度判断するまで true）
+export const recheckRequired = (f) => (f?.rechecks ?? []).some((r) => r.required);
 const SYMPTOMS = new Set(["chief_complaint", "symptom", "associated_symptom"]);
 export const ATTR_ORDER = ["onset", "duration", "frequency", "course", "quality", "location", "severity", "modifying_factor"];
 const OTHER_ORDER = ["history", "medication", "allergy", "background", "psychological", "other"];
@@ -160,7 +164,7 @@ export const TB_LABEL = {
 // ── カルテ用の文章（医師が編集してから貼る）。問診メモと同じデータから作り、原文に無い診断名・検査結果は足さない ──
 const MARK = { doctor_confirmed: "［医］", patient_answered: "［患］", unconfirmed: "［未］", needs_correction: "［要修正］" };
 const pol = (f) => (f.polarity === "denied" ? "（なし）" : f.polarity === "uncertain" ? "（本人も不確か）" : "");
-const line = (it) => `${it.text}${pol(it.fact)}${MARK[it.fact.status] ?? ""}${unverified(it.msg) ? "［訳未検証］" : ""}`;
+const line = (it) => `${it.text}${pol(it.fact)}${MARK[it.fact.status] ?? ""}${recheckRequired(it.fact) ? "［要再確認］" : ""}${unverified(it.msg) ? "［訳未検証］" : ""}`;
 
 export function karteText(msgs, session, today = new Date(), audit = session?.audit) {
   const memo = clinicalMemo(msgs);
@@ -169,7 +173,7 @@ export function karteText(msgs, session, today = new Date(), audit = session?.au
   const langName = { en: "英語", "zh-CN": "中国語", vi: "ベトナム語" }[session?.patientLang] ?? session?.patientLang ?? "";
   if (!memo.count && !tbs.size) return "";
   const L = [`【問診記録（UNSAID）】${langName}話者・${today.toLocaleDateString("ja-JP")}`,
-    "※患者の申告を機械翻訳と AI で整理したもの（診断ではない）。［医］医師確認済み［患］確認質問への患者回答［未］未確認［要修正］医師が要修正とした項目。印なしは AI 抽出（医師未確認）。"];
+    "※患者の申告を機械翻訳と AI で整理したもの（診断ではない）。［医］医師確認済み［患］確認質問への患者回答［未］未確認［要修正］医師が要修正とした項目［要再確認］医師の判断の後に患者の答えが変わった項目。印なしは AI 抽出（医師未確認）。"];
   const chief = memo.symptoms.filter((s) => s.chief);
   if (memo.symptoms.length) {
     L.push("", "■主訴");

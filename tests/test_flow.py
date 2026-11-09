@@ -331,7 +331,7 @@ def test_send_requires_confirmed(api):
 
 
 def test_session_expiry(api):
-    api.db.collection("sessions").document("s1").update(
+    api.db.collection("sessions").document(api.sid).update(
         {"createdAt": datetime.now(timezone.utc) - timedelta(hours=main.SESSION_MAX_HOURS + 1)})
     mid = api.as_("pat").say("patient", "hello")
     assert api.post("/analyze", messageId=mid).status_code == 410
@@ -344,10 +344,10 @@ def test_end_deletes_all_new_records(api):
     api.patient_says("周围的东西在转（天旋地转）", replyTo=qid, answer={"type": "option", "index": 0})
     exp = api.doctor_says(fake_ai.C_EXPLAIN)
     _teachback(api, exp)
-    assert len(api.msgs().list_documents()) == 5
+    assert len(list(api.msgs().list_documents())) == 5
     r = api.as_("doc").post("/end")
     assert r.status_code == 200 and r.json()["deleted"] == 5
-    assert not any(k.startswith("sessions/s1") for k in api.db.store)
+    assert api.gone()
 
 
 def test_legacy_patient_mode_still_available(api):

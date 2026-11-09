@@ -1,17 +1,20 @@
 // firestore.rules を本物のルールエンジン（Firebase エミュレーター）で確かめるテスト。
 // 端末が Firestore に直接書いて Safety Gate を飛ばせないこと（送信済みにする・訳や Gate の状態を書く・なりすます）を確認する。
 //
-//   npm i --no-save firebase-tools@14 @firebase/rules-unit-testing@4 firebase@10
+//   npm i --no-save firebase-tools@14 @firebase/rules-unit-testing@4 firebase@11
 //   npx firebase emulators:exec --only firestore --project demo-unsaid "node --test tests/rules/"
 //
-// （Java 11 以上が要る。この作業環境では Java を入れられず、まだ実行していない。SECURITY.md・EVALUATION.md）
+// （Java 21 が要る。2026-11-10 に firebase-tools 14.27.0・Temurin 21 で 10 件すべて成功。EVALUATION.md）
+// 同時更新・重複イベントは、本物の SDK の runTransaction をエミュレーターに対して2つ同時に走らせて確かめる
+// （web/unsaid.js の receive と同じ書き方。ローカルキャッシュには頼らない）。
 // 同じ条件を Python に書き写した devtools/rules.py は tests/test_rules_emulation.py で確かめている。
 import { test, before, after, beforeEach } from "node:test";
 import { readFileSync } from "node:fs";
+import assert from "node:assert/strict";
 import {
   initializeTestEnvironment, assertSucceeds, assertFails,
 } from "@firebase/rules-unit-testing";
-import { doc, setDoc, updateDoc, getDoc, serverTimestamp, Timestamp } from "firebase/firestore";
+import { doc, setDoc, updateDoc, getDoc, getDocFromServer, serverTimestamp, Timestamp, runTransaction } from "firebase/firestore";
 
 let env;
 const SID = "s1";
@@ -81,4 +84,59 @@ test("未解決事項（session の audit）は端末が書けない・第三者
   await assertFails(updateDoc(doc(as("doc"), "sessions", SID), { audit: { issues: [] } }));
   await assertFails(getDoc(doc(as("stranger"), "sessions", SID)));
   await assertFails(getDoc(msgs(as("stranger"), "sent1")));
+});
+
+// web/unsaid.js の receive と同じ: サーバーの最新の status を読み、sent のときだけ既読にする。
+// 同時に書いた後の方はルールで断られるので、サーバーから読み直して、もう sent でなければ成功とみなす
+const receiveTx = (db, id) => runTransaction(db, async (tx) => {
+  const snap = await tx.get(msgs(db, id));
+  if (snap.exists() && snap.data().status === "sent") tx.update(msgs(db, id), { status: "received", receivedAt: serverTimestamp() });
+});
+async function receive(db, id) {
+  try {
+    await receiveTx(db, id);
+  } catch (e) {
+    const now = e.code === "permission-denied" ? await getDocFromServer(msgs(db, id)).catch(() => null) : null;
+    if (!(now?.exists() && now.data().status !== "sent")) throw e;
+  }
+}
+
+test("同時更新（トランザクションだけ）: 後の方はルールで断られる（読み直しでは防げない。下の receive が必要な理由）", async () => {
+  const r = await Promise.allSettled([receiveTx(as("doc"), "sent1"), receiveTx(as("doc"), "sent1")]);
+  assert.equal(r.filter((x) => x.status === "fulfilled").length >= 1, true);
+  assert.equal((await getDoc(msgs(as("doc"), "sent1"))).data().status, "received");
+});
+
+test("重複イベント: 既読の発言をもう一度既読にする書き込みはルールが断る（だから端末はトランザクションで確かめる）", async () => {
+  await assertSucceeds(updateDoc(msgs(as("doc"), "sent1"), { status: "received", receivedAt: serverTimestamp() }));
+  await assertFails(updateDoc(msgs(as("doc"), "sent1"), { status: "received", receivedAt: serverTimestamp() }));
+});
+
+test("同時更新: 2台の医師の端末が同時に既読にしても、どちらも成功し1回だけ書かれる", async () => {
+  const a = as("doc"), b = as("doc");
+  const r = await Promise.allSettled([receive(a, "sent1"), receive(b, "sent1"), receive(a, "sent1")]);
+  assert.deepEqual(r.map((x) => x.status), ["fulfilled", "fulfilled", "fulfilled"], String(r.find((x) => x.reason)?.reason));
+  const after = (await getDoc(msgs(as("doc"), "sent1"))).data();
+  assert.equal(after.status, "received");
+});
+
+test("直接書き込み: 解析のやり直しの所有権（lease）・問診メモ・再確認の印を端末が書けない", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(msgs(ctx.firestore(), "retry1"), {
+      from: "patient", original: "就是天旋地转", status: "sent",
+      meaning: { status: "retrying", retry_run: "server-run", retry_until: "2099-01-01T00:00:00+00:00", facts: [] },
+    });
+  });
+  for (const uid of ["doc", "pat"]) {
+    await assertFails(updateDoc(msgs(as(uid), "retry1"), { "meaning.status": "error" }));
+    await assertFails(updateDoc(msgs(as(uid), "retry1"), { "meaning.retry_run": "mine" }));
+    await assertFails(updateDoc(msgs(as(uid), "retry1"), { "meaning.facts": [{ status: "doctor_confirmed", rechecks: [] }] }));
+  }
+});
+
+test("直接書き込み: 医師も確認質問・理解の確認を自分で作って送れない（Safety Gate と照合を飛ばせない）", async () => {
+  await assertFails(setDoc(msgs(as("doc"), "y1"), { ...base, from: "doctor", kind: "clarify", status: "sent" }));
+  await assertFails(setDoc(msgs(as("doc"), "y2"), { ...base, from: "doctor", kind: "clarify" }));
+  await assertFails(setDoc(msgs(as("doc"), "y3"), { ...base, from: "doctor", kind: "teachback" }));
+  await assertFails(setDoc(msgs(as("doc"), "y4"), { ...base, from: "doctor", translation: { text: "x" } }));
 });

@@ -13,6 +13,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, collection, doc, addDoc, getDoc, updateDoc, query, orderBy, onSnapshot, serverTimestamp, arrayUnion,
+  runTransaction, getDocFromServer,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { transcribe as postWav } from "./stt.js";
 import { firebaseConfig, API_URL, FIRESTORE_DB } from "./firebase-config.js";
@@ -65,7 +66,13 @@ export async function joinSession(sid, patientLang) {
   if (await mySession(sid)) return;
   const change = { members: arrayUnion(user.uid) };
   if (patientLang) change.patientLang = patientLang;
-  await updateDoc(doc(db, "sessions", sid), change);
+  try {
+    await updateDoc(doc(db, "sessions", sid), change);
+  } catch (e) {
+    // 二重押し・別のタブで先に参加できていた（patientLang はもう書けないのでルールが断る）なら成功とみなす
+    if (e.code === "permission-denied" && (await mySession(sid))) return;
+    throw e;
+  }
 }
 
 // 患者がスマホで開く URL。page は患者の画面（既定は try.html）。この URL を qrSvg() で QR にする
@@ -189,8 +196,31 @@ export const reply = (sid, questionId, text, type = "free_text", index, onCreate
 // 確認質問・理解の確認への答えなら元の情報に結びつける
 export const send = (sid, mid) => callApi("/send", sid, mid);
 
-// 医師: 患者の発言を表示したら「受け取った」（status sent のときだけ）
-export const receive = (sid, mid) => updateDoc(msgRef(sid, mid), { status: "received", receivedAt: serverTimestamp() });
+// 医師: 患者の発言を表示したら「受け取った」（status sent のときだけ）。
+// watchMessages は書き込みが反映される前に同じ発言を何度も sent のまま渡すことがあり、医師が2台の端末で開いていることもある。
+// ローカルキャッシュの反映に頼らず、トランザクションでサーバーの最新の status を読んで、sent のときだけ書く
+// 2台が同時に書くと、後の方は（読み直しより先に）ルールで断られる（Firestore エミュレーターで確認）。そのときは
+// サーバーから読み直し（キャッシュは使わない）、もう sent でなければ、ほかの端末が受け取ったので成功とみなす
+const receiving = new Set();
+export async function receive(sid, mid) {
+  if (receiving.has(mid)) return; // この端末ではもう受け取りの処理を始めた
+  receiving.add(mid);
+  try {
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(msgRef(sid, mid));
+      if (snap.exists() && snap.data().status === "sent") {
+        tx.update(msgRef(sid, mid), { status: "received", receivedAt: serverTimestamp() });
+      }
+    });
+  } catch (e) {
+    if (e.code === "permission-denied") {
+      const now = await getDocFromServer(msgRef(sid, mid)).catch(() => null);
+      if (now?.exists() && now.data().status !== "sent") return;
+    }
+    receiving.delete(mid); // 失敗したら、次のスナップショットでやり直せるように
+    throw e;
+  }
+}
 
 // 「もう一度」: status が error の発言、または待ちのまま止まった発言（ui.js の stuckWatch）を、
 // 止まった所から呼び直す（m は watchMessages で受け取った1件）。サーバーがまだ処理中なら 409 で何もしない
