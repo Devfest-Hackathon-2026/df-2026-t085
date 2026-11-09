@@ -208,6 +208,9 @@ def _key(s):
 
 
 # ── Meaning Engine の出力を検証して、保存する形にする ──
+MAX_FACTS = 20
+
+
 def build_meaning(raw, *, utterance_id, source_text, source_lang, known_quotes=(), at=None, schema=None):
     """Gemini の meaning 出力（schemas/meaning.json）→ Firestore に書く meaning。
 
@@ -219,7 +222,12 @@ def build_meaning(raw, *, utterance_id, source_text, source_lang, known_quotes=(
     at = at or now_iso()
     rejected = []
     facts, seen = [], set()
-    for f in raw.get("facts", []):
+    # 件数の上限はスキーマではなくここで守る（Vertex AI は、facts の maxItems: 20 と ambiguities を同じスキーマに
+    # 入れると「複雑すぎる」として 400 INVALID_ARGUMENT で断る。2026-11-10 に本物の Gemini で確認）
+    raw_facts = raw.get("facts", [])
+    if len(raw_facts) > MAX_FACTS:
+        rejected.append({"type": "fact", "reason": "too_many", "dropped": len(raw_facts) - MAX_FACTS})
+    for f in raw_facts[:MAX_FACTS]:
         meaning = _clip(f.get("normalized_meaning"))
         g = ground(f.get("source_quote", ""), source_text)
         if not meaning:

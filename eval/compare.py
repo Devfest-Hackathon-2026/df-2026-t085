@@ -212,6 +212,34 @@ def run_teachback(c):
     return out
 
 
+# ───────────── 小さな比較（--subset）: 種類・正解ラベルごとに偏らず 30 件を選ぶ（毎回同じ件）─────────────
+SUBSET = {"intent": ("expect", {"clarify": 4, "resolved": 4}),
+          "medical": (lambda c: bool(c["ambiguities"]), {True: 3, False: 1}),
+          "precision": ("error", None),  # 誤りの種類ごとに 1 件ずつ、8 件まで
+          "explanation": ("insufficient", {True: 2, False: 2}),
+          "understanding": ("mismatch", {True: 3, False: 1}),
+          "teachback": ("expected", {"inconsistent": 1, "consistent": 1})}
+
+
+def subset(name, cases):
+    key, quota = SUBSET[name]
+    get = key if callable(key) else (lambda c: c[key])
+    if quota is None:
+        seen, out = set(), []
+        for c in cases:
+            if get(c) not in seen and len(out) < 8:
+                seen.add(get(c))
+                out.append(c)
+        return out
+    left = dict(quota)
+    out = []
+    for c in cases:
+        if left.get(get(c), 0) > 0:
+            left[get(c)] -= 1
+            out.append(c)
+    return out
+
+
 # ───────────── 集計 ─────────────
 def frac(n, d):
     return f"{n}/{d}（{100 * n / d:.0f}%）" if d else "—"
@@ -239,7 +267,8 @@ def report(R, mode, started, pivot):
     L = ["# 比較評価: A 通常の翻訳 / B ＋意図の解析 / C ＋Semantic Bridge・検証 / D UNSAID 完全版", "",
          f"- 実行: {started}（{'本物の Gemini: ' + unsaid_ai.MODEL + '（役割ごと: source=' + unsaid_ai.SOURCE_MODEL + ', verify=' + unsaid_ai.VERIFY_MODEL + ', audit=' + unsaid_ai.AUDIT_MODEL + '）' if mode == 'live' else '偽の AI（仕組みの確認だけ。数値は性能ではない）'}）",
          f"- 症例: 意図 {len(R['intent'])}・医学的な曖昧さ {len(R['medical'])}・否定/数量/日時/単位 {len(R['precision'])}・"
-         f"説明不足 {len(R['explanation'])}・理解の相違 {len(R['understanding'])}（計 100、すべて架空）。失敗した症例 {errs} 件",
+         f"説明不足 {len(R['explanation'])}・理解の相違 {len(R['understanding'])}・teach-back {len(R['teachback'])}"
+         f"（計 {sum(len(v) for v in R.values())}、すべて架空）。失敗した症例 {errs} 件",
          f"- 訳し直しの上限: {main.TRANSLATION_RETRIES} 回。臨床的な有効性は検証していない", "",
          "| 指標 | A | B | C | D |", "|---|---|---|---|---|"]
 
@@ -252,6 +281,13 @@ def report(R, mode, started, pivot):
         lambda k: "仕組みなし" if k in "AB" else frac(sum(r["injected"]["corrupted"] != ussa.VERIFIED for r in inj), len(inj)))
     row("意味の反転の見逃し（否定の反転を入れた訳）",
         lambda k: frac(len(neg), len(neg)) if k in "AB" else frac(sum(r["injected"]["corrupted"] == ussa.VERIFIED for r in neg), len(neg)))
+    row("誤訳の見逃し（誤りを入れた訳を、そのまま届く判定にした）",
+        lambda k: frac(len(inj), len(inj)) if k in "AB" else frac(sum(r["injected"]["corrupted"] in (ussa.VERIFIED, ussa.AMBIGUOUS) for r in inj), len(inj)))
+    for et, label in (("negation", "否定"), ("quantity", "数量"), ("condition_missing", "条件の欠落"), ("frequency", "回数"), ("time", "日時")):
+        grp = [r for r in inj if r["error_type"] == et]
+        if grp:
+            row(f"　うち{label}の取り違えの見逃し",
+                lambda k, grp=grp: frac(len(grp), len(grp)) if k in "AB" else frac(sum(r["injected"]["corrupted"] in (ussa.VERIFIED, ussa.AMBIGUOUS) for r in grp), len(grp)))
     row("正しい訳を誤って止めた（照合の誤警報）",
         lambda k: "—" if k in "AB" else frac(sum(r["injected"]["reference"] in (ussa.MISMATCH, ussa.VERIFICATION_FAILED) for r in inj), len(inj)))
     row("根拠のない情報の追加（病名などが出た数）",
@@ -261,6 +297,8 @@ def report(R, mode, started, pivot):
     row("意図の曖昧さで本人に聞いた（聞くべき発言）",
         lambda k: frac(sum(r[k]["asked"] for r in need), len(need)) if k != "A" else frac(0, len(need)))
     row("必要な確認の見逃し（意図）", lambda k: frac(sum(not r[k]["asked"] for r in need), len(need)))
+    row("意味が未確認のまま送信（聞くべき発言を、聞かずに訳して届けた）",
+        lambda k: frac(sum((not r[k]["asked"]) and bool(r[k]["translation"]) for r in need), len(need)))
     row("不要な確認（文脈で決まる発言で聞いた）", lambda k: frac(sum(r[k]["asked"] for r in noneed), len(noneed)))
     row("文脈で決まる発言を正しい意味で訳した", lambda k: frac(sum(r[k]["intent_ok"] for r in noneed), len(noneed)))
     medneed = [r for r in md if r["expected"]]
@@ -303,27 +341,33 @@ def main_():
     g.add_argument("--live", action="store_true")
     g.add_argument("--mock", action="store_true")
     ap.add_argument("--pivot", action="store_true", help="英語経由の翻訳（E）も比べる")
-    ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--workers", type=int, default=2)
+    ap.add_argument("--subset", action="store_true", help="30 件だけ（課金を抑えて先に確かめる）")
     a = ap.parse_args()
     if a.mock:
         from devtools import fake_ai
         fake_ai.install(unsaid_ai)
     started = time.strftime("%Y-%m-%d %H:%M %Z")
+    C = {"intent": INTENT, "medical": MEDICAL, "precision": PRECISION, "explanation": EXPLANATION,
+         "understanding": UNDERSTANDING, "teachback": TEACHBACKS}
+    if a.subset:
+        C = {k: subset(k, v) for k, v in C.items()}
     with ThreadPoolExecutor(a.workers) as ex:
-        R = {"intent": list(ex.map(run_intent, INTENT)),
-             "medical": list(ex.map(run_medical, MEDICAL)),
-             "precision": list(ex.map(lambda c: run_precision(c, a.pivot), PRECISION)),
-             "explanation": list(ex.map(run_explanation, EXPLANATION)),
-             "understanding": list(ex.map(run_understanding, UNDERSTANDING)),
-             "teachback": list(ex.map(run_teachback, TEACHBACKS))}
+        R = {"intent": list(ex.map(run_intent, C["intent"])),
+             "medical": list(ex.map(run_medical, C["medical"])),
+             "precision": list(ex.map(lambda c: run_precision(c, a.pivot), C["precision"])),
+             "explanation": list(ex.map(run_explanation, C["explanation"])),
+             "understanding": list(ex.map(run_understanding, C["understanding"])),
+             "teachback": list(ex.map(run_teachback, C["teachback"]))}
     md = report(R, "live" if a.live else "mock", started, a.pivot)
     if a.live:
         meta = {"started": started, "model": unsaid_ai.MODEL, "source_model": unsaid_ai.SOURCE_MODEL,
                 "verify_model": unsaid_ai.VERIFY_MODEL, "audit_model": unsaid_ai.AUDIT_MODEL,
                 "translation_retries": main.TRANSLATION_RETRIES, "cases": {k: len(v) for k, v in R.items()}}
-        (OUT / "compare_results.json").write_text(json.dumps({"meta": meta, **R}, ensure_ascii=False, indent=1),
-                                                  encoding="utf-8")
-        (OUT / "compare_results.md").write_text(md, encoding="utf-8")
+        name = "compare_results_subset" if a.subset else "compare_results"
+        meta.update(project=unsaid_ai.PROJECT, location=unsaid_ai.LOCATION, subset=a.subset)
+        (OUT / f"{name}.json").write_text(json.dumps({"meta": meta, **R}, ensure_ascii=False, indent=1), encoding="utf-8")
+        (OUT / f"{name}.md").write_text(md, encoding="utf-8")
     else:
         print("※ 偽の AI での実行。数値はモデルの性能ではない（評価の仕組みが動くかの確認）。ファイルには書かない。\n")
     print(md)

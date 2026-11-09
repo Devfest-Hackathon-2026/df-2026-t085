@@ -97,13 +97,16 @@ app.add_middleware(
 )
 
 _db = None
+# Firebase（Auth・Firestore）のプロジェクト。Gemini のプロジェクト（unsaid_ai.PROJECT、UNSAID_VERTEX_PROJECT）を
+# 評価のために替えても、こちらは変わらない
+FIREBASE_PROJECT = os.environ.get("FIREBASE_PROJECT", "unsaid-devfest")
 
 
 def db():
     global _db
     if _db is None:
         if not firebase_admin._apps:
-            firebase_admin.initialize_app(options={"projectId": unsaid_ai.PROJECT})
+            firebase_admin.initialize_app(options={"projectId": FIREBASE_PROJECT})
         _db = firestore.client(database_id=FIRESTORE_DATABASE) if FIRESTORE_DATABASE else firestore.client()
     return _db
 

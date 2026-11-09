@@ -255,3 +255,20 @@ def test_teachback_transitions():
     for (_frm, ev), to in C.TEACHBACK_TRANSITIONS.items():
         if to == C.T_CONFIRMED:
             assert ev == "doctor_confirm"
+
+
+def test_meaning_facts_capped_in_code_not_schema():
+    """件数の上限（20）はコードで守る。スキーマの maxItems は本物の Vertex AI が「複雑すぎる」と断るので付けない。"""
+    import json
+
+    import clinical
+    from pathlib import Path
+    schema = json.loads((Path(__file__).resolve().parent.parent / "schemas/meaning.json").read_text())
+    assert "maxItems" not in schema["properties"]["facts"]
+    text = "头" * 30
+    raw = {"facts": [{"category": "symptom", "normalized_meaning": f"症状{i}", "source_quote": "头", "polarity": "present",
+                      "about": ""} for i in range(25)], "ambiguities": [],
+           "resolution": {"applies": False, "resolves": "no", "meaning_doctor": "", "source_quote": ""}}
+    m = clinical.build_meaning(raw, utterance_id="u", source_text=text, source_lang="zh-CN", schema=schema)
+    assert len(m["facts"]) == clinical.MAX_FACTS
+    assert {"type": "fact", "reason": "too_many", "dropped": 5} in m["rejected"]

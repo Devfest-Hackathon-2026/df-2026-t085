@@ -1,5 +1,9 @@
 # ステージング（本番と分けた検証環境）
 
+> **2026-11-10 時点の状況**: 下の手順はチームのプロジェクト `unsaid-devfest` の権限が要る。評価を担当するアカウントにはまだ権限が無いため、
+> 本物の Gemini の評価は自分のプロジェクト（`kumu-devfest-2026`）で行った（`UNSAID_VERTEX_PROJECT`、下の「B」）。
+> ステージングをどちらで作るかは、チームで決める（A: チームのプロジェクト / B: 自分のプロジェクト）。
+
 `feature/unsaid-clinical-meaning`（UNSAID 2.0）を、本番（main の画面・API・データ）に触れずに動かすための手順。
 **まだ実行していない**（作業環境に gcloud / Firebase CLI の認証が無かった）。本番のリソースを上書きするコマンドは無い。
 
@@ -76,3 +80,36 @@ gcloud run services delete unsaid-api-staging --region asia-northeast1
 ```
 
 （`staging` データベースの中身は TTL で消える。データベースごと消すときは `gcloud firestore databases delete --database=staging`。）
+
+
+---
+
+## B. 自分のプロジェクト（例: `kumu-devfest-2026`）で、ステージングを丸ごと別に作る場合
+
+チームの本番（`unsaid-devfest` の Cloud Run・Firestore・Hosting）には一切触れない。代わりに、次のものを**新しく作る（課金が発生しうる）**。
+実行する前に、作るものと費用をチームで確認する。
+
+| 作るもの | コマンドの例 | 費用 |
+|---|---|---|
+| API の有効化 | `gcloud services enable aiplatform.googleapis.com run.googleapis.com firestore.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com speech.googleapis.com --project kumu-devfest-2026` | 有効化自体は無料 |
+| Firebase の追加・ウェブアプリ・匿名ログイン | Firebase コンソールで既存の GCP プロジェクトに Firebase を追加 → ウェブアプリを登録 → Authentication で「匿名」を有効 | 無料枠 |
+| Firestore（`(default)` で可。チームのとは別のプロジェクトなので混ざらない） | `gcloud firestore databases create --location=asia-northeast1 --project kumu-devfest-2026` ＋ TTL（上の 1 と同じ） | 少量なら無料枠 |
+| ルール | `firebase deploy --only firestore:rules --project kumu-devfest-2026` | 無料 |
+| Cloud Run（API） | `gcloud run deploy unsaid-api-staging --source . --region asia-northeast1 --project kumu-devfest-2026 --allow-unauthenticated --memory 512Mi --timeout 120 --max-instances 2 --set-env-vars UNSAID_VERTEX_PROJECT=kumu-devfest-2026,FIREBASE_PROJECT=kumu-devfest-2026,STT_PROJECT=kumu-devfest-2026` | 使った分（Cloud Build・Artifact Registry を含む） |
+| Hosting（画面） | `firebase hosting:channel:deploy clinical-meaning --project kumu-devfest-2026 --expires 7d` | 少量なら無料枠 |
+
+サーバーの接続先はすべて環境変数で替えられる（コードの変更は不要）:
+
+| 環境変数 | 何の接続先か | 既定 |
+|---|---|---|
+| `UNSAID_VERTEX_PROJECT` / `UNSAID_VERTEX_LOCATION` / `UNSAID_MODEL` | Gemini（Vertex AI） | `unsaid-devfest` / `global` / `gemini-3.8-flash` |
+| `FIREBASE_PROJECT` | Firebase（ID トークンの確認・Firestore） | `unsaid-devfest` |
+| `FIRESTORE_DATABASE` | Firestore のデータベース | `(default)` |
+| `STT_PROJECT` / `STT_LOCATION` | Speech-to-Text | `unsaid-devfest` / `us` |
+
+**画面だけはコードの変更が要る**: `web/firebase-config.js` はチームのプロジェクトのウェブ設定（apiKey・appId など）と API の URL を
+決め打ちしている。自分のプロジェクトで動かすには、そのプロジェクトのウェブ設定（Firebase コンソールで表示される、秘密ではない値）と
+Cloud Run の URL を、ホスト名（`kumu-devfest-2026--…web.app`）で切り替える分岐を足す。本番の URL での動きは変えない。
+
+サービスアカウントの権限（Cloud Run の実行アカウントに Vertex AI ユーザー・Firestore ユーザー・Speech-to-Text）は、
+自分のプロジェクトの中の変更。チームのプロジェクトの権限は変えない。

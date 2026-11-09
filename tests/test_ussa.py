@@ -272,3 +272,109 @@ def test_memory_keeps_instructions_and_ids():
                        "frame": {}})
     ids = [m["utterance_id"] for m in a["memory"]]
     assert "d1" in ids and len(ids) == U.MEMORY_SIZE and ids[-1] == "p29"
+
+
+# ── 本物の Gemini での確認で見つかった誤警報（2026-11-10）: 中国語の体温「三十八度五」を 38 と読んでいた ──
+@pytest.mark.parametrize("zh", ["我发烧三十八度五。", "我发烧38度5。", "我发烧三十八点五度。", "我发烧38.5度。"])
+def test_chinese_temperature_with_decimal_is_one_number(zh):
+    assert U.numbers(zh) == {38.5}
+    assert not [i for i in U.rule_check(zh, "zh-CN", "38.5度の熱があります。", "ja") if i["strength"] == "strong"]
+
+
+def test_chinese_temperature_wrong_value_still_caught():
+    assert [i for i in U.rule_check("我发烧三十八度五。", "zh-CN", "38度の熱があります。", "ja") if i["strength"] == "strong"]
+    assert [i for i in U.rule_check("我发烧三十九度。", "zh-CN", "38.5度の熱があります。", "ja") if i["strength"] == "strong"]
+
+
+def test_chinese_clock_with_dian_is_not_decimal():
+    assert 8.5 not in U.numbers("明天早上八点半来。")
+    assert 8.5 not in U.numbers("八点五十分吃药。")
+
+
+def test_modality_rule_is_the_same_for_source_and_translation_frames():
+    """原文の枠（A）と訳文の枠（B）で、複数の様相を持つ文の様相の決め方が同じ（禁止を優先）。違うと正しい訳を止める
+    （本物の Gemini で、規則が無いと B が「may」を選び 5/15 で食い違った。eval/live_modality_check.py）。"""
+    root = Path(__file__).resolve().parent.parent
+    rule = [ln for ln in (root / "prompts/source_system.txt").read_text(encoding="utf-8").splitlines()
+            if "most restrictive" in ln or "must_not > cannot" in ln]
+    assert rule and all(ln in (root / "prompts/frame_system.txt").read_text(encoding="utf-8") for ln in rule)
+
+
+# ── 本物の Gemini での比較評価で見つかった誤警報（2026-11-10）: 「帰らずに待って」を A は「待つ（必要）＋帰るを否定」、
+#    B は「帰らないで（禁止）」と表した。同じ行為（go home）を両方が禁止・否定しているなら、表し方の違いとして強い証拠にしない ──
+def test_same_prohibited_action_in_different_form_is_not_strong():
+    a = full_frame("instruction", "affirmative", "must", "addressee", "wait", negated=["go home"])
+    b = full_frame("instruction", "negative", "must_not", "addressee", "go home")
+    strong = [i for i in U.compare_frames(a, b) if i["strength"] == "strong"]
+    assert not [i for i in strong if i["type"] == "polarity_flip"]
+
+
+def test_prohibition_lost_is_still_strong():
+    src = full_frame("instruction", "negative", "must_not", "addressee", "go home")
+    for b in (full_frame("instruction", "affirmative", "may", "addressee", "go home"),       # 帰ってよい
+              full_frame("instruction", "affirmative", "must", "addressee", "wait")):        # 待って（帰るの禁止が消えた）
+        assert [i for i in U.compare_frames(src, b) if i["type"] == "polarity_flip" and i["strength"] == "strong"], b
+    # 「待って（帰るの否定つき）」→「待たないで」: 禁止が別の行為に移った
+    a = full_frame("instruction", "affirmative", "must", "addressee", "wait", negated=["go home"])
+    b = full_frame("instruction", "negative", "must_not", "addressee", "wait")
+    assert [i for i in U.compare_frames(a, b) if i["type"] == "polarity_flip" and i["strength"] == "strong"]
+
+
+def test_both_prohibit_different_actions_is_medium():
+    """両方とも禁止だが、禁止する行為が違う（「帰らないで」→「待たないで」）。行為の名前は抽出のゆれが大きいので中くらい
+    （LLM の直接照合 C が同じ意味と言わなければ AMBIGUOUS 以上）。"""
+    a = full_frame("instruction", "negative", "must_not", "addressee", "go home")
+    b = full_frame("instruction", "negative", "must_not", "addressee", "wait")
+    assert [i for i in U.compare_frames(a, b) if i["type"] == "polarity_flip" and i["strength"] == "medium"]
+
+
+# ── 本物の Gemini での比較評価で見つかった誤警報（2026-11-10）: 「もう一度来て」を A は量「1回」、B は量なしと取った。
+#    1 は暗黙の「1つ・1回」と区別できない（ルール層も 1 と 0 は数えない）ので、片方にだけあるときは中くらい ──
+def test_implicit_one_on_one_side_is_medium():
+    a = full_frame("instruction", "affirmative", "must", "addressee", "come back",
+                   quantities=[{"value": 1.0, "unit": "times", "of": "visit"}])
+    b = full_frame("instruction", "affirmative", "must", "addressee", "come back")
+    q = [i for i in U.compare_frames(a, b) if i["type"] in ("quantity_change", "addition")]
+    assert q and all(i["strength"] == "medium" for i in q)
+    assert all(i["strength"] == "medium" for i in U.compare_frames(b, a) if i["type"] in ("quantity_change", "addition"))
+
+
+def test_one_vs_two_tablets_is_still_strong():
+    a = full_frame("instruction", "affirmative", "must", "addressee", "take medicine",
+                   quantities=[{"value": 1.0, "unit": "tablet", "of": "medicine"}])
+    b = full_frame("instruction", "affirmative", "must", "addressee", "take medicine",
+                   quantities=[{"value": 2.0, "unit": "tablet", "of": "medicine"}])
+    assert [i for i in U.compare_frames(a, b) if i["type"] == "quantity_change" and i["strength"] == "strong"]
+    c = full_frame("instruction", "affirmative", "must", "addressee", "take medicine")  # 2錠が消えた
+    assert [i for i in U.compare_frames(b, c) if i["type"] == "quantity_change" and i["strength"] == "strong"]
+
+
+# ── 本物の Gemini での繰り返しの照合で見つかった誤警報（2026-11-10）: 同じ期間を「量 3 day」「期間 P3D」「3日前（day-3）」と
+#    別の形で取った。期間としてそろえてから比べる。値が違う・片方に無いときは強い証拠のまま ──
+def _dur(**kw):
+    return full_frame("statement", "affirmative", "none", "speaker", "cough", **kw)
+
+
+Q3D = {"value": 3.0, "unit": "day", "of": "cough"}
+P3D = {"kind": "duration", "value": "p3d"}
+AGO3 = {"kind": "relative_day", "value": "day-3"}
+
+
+@pytest.mark.parametrize("a,b", [
+    (_dur(times=[P3D]), _dur(quantities=[Q3D])),
+    (_dur(times=[P3D]), _dur(times=[AGO3])),
+    (_dur(quantities=[Q3D]), _dur(times=[AGO3])),
+    (_dur(times=[{"kind": "duration", "value": "pt8h"}]), _dur(quantities=[{"value": 8.0, "unit": "hour", "of": "fasting"}])),
+])
+def test_same_duration_in_different_form_is_not_strong(a, b):
+    assert not [i for i in U.compare_frames(a, b) + U.compare_frames(b, a) if i["strength"] == "strong"]
+
+
+@pytest.mark.parametrize("a,b", [
+    (_dur(times=[P3D]), _dur(quantities=[{"value": 5.0, "unit": "day", "of": "cough"}])),   # 3日 → 5日
+    (_dur(times=[AGO3]), _dur(times=[{"kind": "duration", "value": "p3w"}])),               # 3日 → 3週
+    (_dur(times=[P3D]), _dur()),                                                              # 期間が消えた
+    (_dur(times=[{"kind": "relative_day", "value": "day-1"}]), _dur()),                       # 昨日が消えた
+])
+def test_changed_or_missing_duration_is_still_strong(a, b):
+    assert [i for i in U.compare_frames(a, b) if i["strength"] == "strong"]

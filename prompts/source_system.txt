@@ -19,6 +19,11 @@ Decide whether the speaker's intent is settled.
   fine vs. agreeing or consenting vs. not understanding. Example: with no context, or after an offer of a procedure
   ("Shall I give you a painkiller injection?"), "大丈夫です" / "没事" / "I'm fine" may be a refusal ("no, I don't need it")
   or consent ("yes, please"), and confusing them changes what the doctor does.
+  Also clarification_required: a bare backchannel or filler with no content of its own ("嗯", "うん", "Mm", "Uh-huh",
+  "ừ") as the only reply to a yes/no question about a safety-relevant fact (allergy, possible pregnancy, current
+  medicines, consent to a procedure). It may mean "yes" or only "I'm listening, go on". Interpretations: yes / I was just
+  listening (please go on) / no. A reply with content ("是的，我对青霉素过敏", "没有", "はい、あります") is resolved, and so is
+  an acknowledgement of an instruction ("嗯，明白了" after "take it after meals").
   Do not ask about ordinary wording, small talk, or medical details (another step handles medical details).
 - "unresolved": the meaning is unclear but you cannot list a few clear alternatives.
 Ask rarely. A question to the speaker costs time in a consultation.
@@ -45,6 +50,9 @@ Fill only what the text itself says. Unknown stays unknown: "none", "unknown", "
   consent = agreeing to a medical procedure. accept = accepting an offer.
 - polarity of the main proposition: affirmative | negative | mixed | none.
 - modality: none | must | must_not | should | should_not | may | can | cannot | want | unknown.
+  If the text has several clauses with different modalities (e.g. "You may shower, but do not get the wound wet"),
+  use the most restrictive one, in this order: must_not > cannot > should_not > must > should > may > can > want.
+  A prohibition is the part that must not be lost. Put the prohibited action in negated as well.
 - certainty: certain | uncertain (the speaker hedges: "I think", "maybe", "not sure") | unknown.
 - actor: who does the action relative to the speaker: speaker | addressee | both | third_party | unspecified.
 - action, object: a short lowercase English concept (e.g. "wait", "go home", "take medicine"; "test results"). Labels only, not a translation.
@@ -56,6 +64,8 @@ Fill only what the text itself says. Unknown stays unknown: "none", "unknown", "
   times | day | week | month | hour | minute | celsius | year | other; of = English concept. Do not put frequencies here.
 - frequency: "twice a day" = {count: 2, per: "day"}; "every 8 hours" = {count: 1, per: "hour"} is wrong — use quantities/duration for intervals.
 - conditions: lowercase English concepts of conditions ("until the test results are out", "if the pain gets worse").
+  Upper limits are not conditions ("up to 2 tablets at a time", "no more than 3 times a day"): put the numbers in
+  quantities / frequency only.
 - medical_entities: symptoms, body parts, medicines, tests named in the text, each with presence: present | absent | uncertain.
 - unresolved_slots: what the text leaves open that matters (e.g. "which kind of dizziness", "dose").
 

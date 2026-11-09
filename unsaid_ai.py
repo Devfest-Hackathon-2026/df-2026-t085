@@ -10,9 +10,13 @@ from pathlib import Path
 from google import genai
 from google.genai import types
 
-PROJECT = "unsaid-devfest"
-LOCATION = "global"
-MODEL = "gemini-3.8-flash"
+# Gemini（Vertex AI）を呼ぶプロジェクトと場所。Firebase・Firestore・Speech-to-Text の接続先とは別（main.FIREBASE_PROJECT、stt.py）。
+# 評価だけを別のプロジェクトで流すときは環境変数で替える（コードの変更は不要。既定はチームのプロジェクト）:
+#   UNSAID_VERTEX_PROJECT=<プロジェクト ID> UNSAID_VERTEX_LOCATION=global python eval/compare.py --live
+# global は Gemini 3.8 Flash の公式の提供先（GA）。処理する場所は保証されないので、実データでは us / eu などを検討する
+PROJECT = os.environ.get("UNSAID_VERTEX_PROJECT", "unsaid-devfest")
+LOCATION = os.environ.get("UNSAID_VERTEX_LOCATION", "global")
+MODEL = os.environ.get("UNSAID_MODEL", "gemini-3.8-flash")
 # translate だけ軽いモデルに替えて速度を比べられるようにしておく（例: Flash-Lite 系）
 TRANSLATE_MODEL = os.environ.get("TRANSLATE_MODEL", MODEL)
 # USSA の役割ごとのモデル（Cloud Run の環境変数で替えられる）。既定はすべて同じモデル。

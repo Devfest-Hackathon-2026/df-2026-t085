@@ -245,11 +245,23 @@ def numbers(text):
     for a, b in re.findall(r"(\d{2})\s*度\s*(\d)\s*分", clock_spans):
         out.add(float(f"{a}.{b}"))
     clock_spans = re.sub(r"\d{2}\s*度\s*\d\s*分", " ", clock_spans)
+    # 体温（中国語）: 38度5 → 38.5（「分」が無い書き方）
+    for a, b in re.findall(r"(\d{2})\s*度\s*(\d)(?![\d.])", clock_spans):
+        out.add(float(f"{a}.{b}"))
+    clock_spans = re.sub(r"\d{2}\s*度\s*\d(?![\d.])", " ", clock_spans)
     for n in re.findall(r"\d+(?:[.,]\d+)?", clock_spans):
         v = float(n.replace(",", "."))
         if v not in (0, 1):
             out.add(v)
-    for s in re.findall(rf"([零〇一二两兩三四五六七八九十]+)(?=[{_COUNTERS}])", t):
+    # 漢数字の小数: 三十八度五（体温）・三十八点五 → 38.5。時刻（八点半・八点五十分）は小数にしない
+    han = t
+    for a, b in re.findall(r"([一二两兩三四五六七八九十]+)度([一二三四五六七八九])(?![十分])", han):
+        out.add(float(f"{_cjk_value(a)}.{_CJK[b]}"))
+    han = re.sub(r"[一二两兩三四五六七八九十]+度[一二三四五六七八九](?![十分])", " ", han)
+    for a, b in re.findall(r"([一二两兩三四五六七八九十]+)[点點]([零〇一二三四五六七八九])(?![十分零〇一二三四五六七八九])", han):
+        out.add(float(f"{_cjk_value(a)}.{_CJK[b]}"))
+    han = re.sub(r"[一二两兩三四五六七八九十]+[点點][零〇一二三四五六七八九](?![十分零〇一二三四五六七八九])", " ", han)
+    for s in re.findall(rf"([零〇一二两兩三四五六七八九十]+)(?=[{_COUNTERS}])", han):
         v = _cjk_value(s)
         if v is not None and v not in (0, 1):
             out.add(float(v))
@@ -358,6 +370,47 @@ def _norm(s):
     return re.sub(r"[\s_\-]+", " ", (s or "").lower()).strip()
 
 
+_PROHIBIT = ("must_not", "should_not", "cannot")
+_TIME_UNITS = {"minute", "hour", "day", "week", "month", "year"}
+_ISO_DUR = re.compile(r"^p(?:([\d.]+)y)?(?:([\d.]+)m)?(?:([\d.]+)w)?(?:([\d.]+)d)?(?:t(?:([\d.]+)h)?(?:([\d.]+)m)?)?$")
+
+
+def _since_days(t):
+    """「N日前から」の relative_day（N ≥ 2）なら N。昨日（day-1）は日付として残す。"""
+    m = re.fullmatch(r"day-(\d+)", t["value"]) if t["kind"] == "relative_day" else None
+    return int(m.group(1)) if m and int(m.group(1)) >= 2 else None
+
+
+def _durations(f):
+    """期間を (単位, 値) にそろえる。同じ期間が「量 3 day」「期間 P3D」「3日前から（day-3）」のどれで取られても同じになる。"""
+    out = set()
+    for t in f["times"]:
+        if t["kind"] == "duration":
+            m = _ISO_DUR.match((t["value"] or "").lower())
+            if m:
+                for unit, v in zip(("year", "month", "week", "day", "hour", "minute"), m.groups()):
+                    if v:
+                        out.add((unit, float(v)))
+        elif _since_days(t):
+            out.add(("day", float(_since_days(t))))
+    for q in f["quantities"]:
+        if q["unit"] in _TIME_UNITS:
+            out.add((q["unit"], float(q["value"])))
+    return out
+
+
+def _prohibited(f):
+    """枠が禁止・否定している行為（正規化した英語の概念）。"""
+    out = {_norm(x) for x in f.get("negated", []) if x}
+    if f["modality"] in _PROHIBIT and f.get("action"):
+        out.add(_norm(f["action"]))
+    return out
+
+
+def _overlap(xs, ys):
+    return any(x == y or (len(x) >= 3 and len(y) >= 3 and (x in y or y in x)) for x in xs for y in ys)
+
+
 def compare_frames(a, b):
     """A（原文の枠）と B（訳文から独立に取った枠）を比べる。言語に依存しない項目（列挙・数・正規化した時刻）だけを比べる。
     文字列の概念（action など）は抽出のゆれが大きいので、一致するときの補助にだけ使う。"""
@@ -369,21 +422,29 @@ def compare_frames(a, b):
     same_action = bool(a["action"]) and _norm(a["action"]) == _norm(b["action"])
     if {a["polarity"], b["polarity"]} == {"affirmative", "negative"}:
         add("polarity_flip", "strong" if same_action else "medium", f"肯定・否定が違う（原文 {_ja(a['polarity'])} / 訳文 {_ja(b['polarity'])}）")
-    if (a["modality"] in ("must_not", "should_not", "cannot")) != (b["modality"] in ("must_not", "should_not", "cannot")) \
+    pa, pb = _prohibited(a), _prohibited(b)
+    if (a["modality"] in _PROHIBIT) != (b["modality"] in _PROHIBIT) \
             and "unknown" not in (a["modality"], b["modality"]) and "none" not in (a["modality"], b["modality"]):
-        add("polarity_flip", "strong", f"禁止・不可が片方だけ（原文 {_ja(a['modality'])} / 訳文 {_ja(b['modality'])}）")
+        # 同じ行為を両方が禁止・否定している（「帰らずに待って」= 待つ＋帰るを否定 / 「帰らないで」= 帰るを禁止）なら、
+        # 表し方の違い。強い証拠にしない（本物の Gemini での比較評価で、正しい訳をこれで止めていた。2026-11-10）
+        same = _overlap(pa, pb)
+        add("polarity_flip", "medium" if same else "strong",
+            f"禁止・不可が片方だけ（原文 {_ja(a['modality'])} / 訳文 {_ja(b['modality'])}）" + ("。同じ行為を両方が否定" if same else ""))
+    elif a["modality"] in _PROHIBIT and b["modality"] in _PROHIBIT and pa and pb and not _overlap(pa, pb):
+        add("polarity_flip", "medium", "禁止している行為が違う可能性")
     yes, no = {"consent", "accept"}, {"refuse", "decline"}
     if (a["speech_act"] in yes and b["speech_act"] in no) or (a["speech_act"] in no and b["speech_act"] in yes):
         add("consent_refusal_confusion", "strong", f"同意と拒否が違う（原文 {_ja(a['speech_act'])} / 訳文 {_ja(b['speech_act'])}）")
     if (a["speech_act"] == "question") != (b["speech_act"] == "question") and "other" not in (a["speech_act"], b["speech_act"]):
         add("other", "strong", f"質問かどうかが違う（原文 {_ja(a['speech_act'])} / 訳文 {_ja(b['speech_act'])}）")
-    for unit in {q["unit"] for q in a["quantities"]} | {q["unit"] for q in b["quantities"]}:
+    for unit in ({q["unit"] for q in a["quantities"]} | {q["unit"] for q in b["quantities"]}) - _TIME_UNITS:
         va = sorted(q["value"] for q in a["quantities"] if q["unit"] == unit)
         vb = sorted(q["value"] for q in b["quantities"] if q["unit"] == unit)
+        # 片方にだけある「1」は、暗黙の「1つ・1回」（もう一度・薬を飲んで）と区別できないので中くらい（ルール層も 1 は数えない）
         if va and not vb:
-            add("quantity_change", "strong", f"量（{_amount(va, unit)}）が訳文に無い")
+            add("quantity_change", "medium" if set(va) == {1.0} else "strong", f"量（{_amount(va, unit)}）が訳文に無い")
         elif vb and not va:
-            add("addition", "strong", f"訳文に原文に無い量（{_amount(vb, unit)}）がある")
+            add("addition", "medium" if set(vb) == {1.0} else "strong", f"訳文に原文に無い量（{_amount(vb, unit)}）がある")
         elif set(va) != set(vb):
             add("quantity_change", "strong", f"量が違う（原文 {_amount(va, unit)} / 訳文 {_amount(vb, unit)}）")
     for per in {f["per"] for f in a["frequency"]} | {f["per"] for f in b["frequency"]}:
@@ -391,8 +452,13 @@ def compare_frames(a, b):
         cb = sorted(f["count"] for f in b["frequency"] if f["per"] == per)
         if set(ca) != set(cb):
             add("frequency_change", "strong", f"{PER_JA.get(per, per)}あたりの回数が違う（原文 {_amount(ca, 'times')} / 訳文 {_amount(cb, 'times')}）")
-    ta = {(t["kind"], t["value"]) for t in a["times"] if t["kind"] in _HARD_TIME_KINDS}
-    tb = {(t["kind"], t["value"]) for t in b["times"] if t["kind"] in _HARD_TIME_KINDS}
+    # 期間（量・ISO の期間・N日前から）は形をそろえて比べる（同じ期間を別の形で取っても止めない。2026-11-10）
+    da, db = _durations(a), _durations(b)
+    if da != db:
+        fmt = lambda d: "・".join(f"{_fmt(v)}{UNIT_JA.get(u, u)}" for u, v in sorted(d)) or "なし"  # noqa: E731
+        add("time_change", "strong", f"期間が違う（原文 {fmt(da)} / 訳文 {fmt(db)}）")
+    ta = {(t["kind"], t["value"]) for t in a["times"] if t["kind"] in _HARD_TIME_KINDS - {"duration"} and not _since_days(t)}
+    tb = {(t["kind"], t["value"]) for t in b["times"] if t["kind"] in _HARD_TIME_KINDS - {"duration"} and not _since_days(t)}
     if ta != tb:
         add("time_change", "strong", f"日時が違う（原文 {_when(v for _, v in sorted(ta))} / 訳文 {_when(v for _, v in sorted(tb))}）")
     pa = {_PART.get(t["value"]) for t in a["times"] if t["kind"] == "part_of_day"} - {None}

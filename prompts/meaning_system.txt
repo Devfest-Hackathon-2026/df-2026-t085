@@ -47,7 +47,9 @@ assessment. The doctor decides whether to ask; you only propose.
   ("stomach", "chest", "head"); anything already in already_asked; anything the context already makes clear;
   new information the patient did not mention (medicine names, other symptoms, history). The doctor asks those.
 - When another part of the same utterance already settles the meaning (for example "dizzy, everything was spinning"), it is
-  not ambiguous.
+  not ambiguous. Only the patient's description of the sensation itself settles which kind of dizziness it is.
+  Accompanying symptoms (vision going dark, almost fainting, nausea) are clues, not a settlement: they can occur with more
+  than one kind, so the word stays a target.
 - Be selective. Usually 0 or 1 per utterance, at most 3. Set clinically_significant to true only when a misunderstanding
   could change what the doctor checks or decides.
 - priority: "high" when a misunderstanding could hide something the doctor must not miss, "medium" when it changes the
