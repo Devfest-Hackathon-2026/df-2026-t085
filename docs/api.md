@@ -3,6 +3,49 @@
 画面（Yusei）が知っておくことは「Firestore に発言を作る → その id で API を呼ぶ → あとは onSnapshot で待つ」だけ。
 API のレスポンスを使わなくても、結果は同じメッセージに書き戻されるので画面は勝手に更新される。
 
+> **2026-11-09 追記（`feature/unsaid-clinical-meaning`）**：既定の流れが「医師が確認質問を選ぶ」（`CLARIFY_MODE=doctor`）になった。
+> 下の「医師が選ぶ流れ」が今の約束。その後ろの節は従来の流れ（`CLARIFY_MODE=patient`）として残している。
+> データの形と状態遷移は [ARCHITECTURE.md](../ARCHITECTURE.md)、判断の理由は [DESIGN_DECISIONS.md](../DESIGN_DECISIONS.md)。
+
+## 医師が選ぶ流れ（既定）
+
+```
+患者の発言:
+  端末   addDoc {from:"patient", original, status:"analyzing"}       → POST /analyze
+  API    translate と meaning を並列 → translation, status "confirmed" → meaning（問診メモ・確認候補）を書き足す
+  端末   逆翻訳を見て「送信」                                         → POST /send（status "sent"）
+  医師   受け取った → status "received"（端末が直接書く）
+
+医師が確認候補を送る:                                                  POST /clarify/send {messageId, candidateId[, questionDoctor]}
+  API    医師の発言 {kind:"clarify", status:"sent", clarify{...}} を作り、候補を asked に
+患者が答える:
+  端末   addDoc {from:"patient", original, status:"analyzing", replyTo:<質問の id>, answer:{type, index?}} → POST /analyze
+         type: option（original = 選んだ選択肢、index = 番号）/ unsure / none → API が訳を付けてそのまま "sent"
+         type: free_text → 翻訳と解釈 → "confirmed" → 患者が POST /send
+  API    送信済みになったら、元の発言の候補と fact を更新（clinical.apply_answer）
+
+理解の確認:                                                            POST /teachback/start {messageId: 医師の説明}
+  API    医師の発言 {kind:"teachback", teachback{explanation_id, status:"asked"}} を作る
+  端末   患者は話す画面で自分の言葉で答える（replyTo, answer:{type:"free_text"}）→ POST /analyze → POST /send
+  API    teachback_result を答えに、teachback.result / status "assessed" を依頼に書く
+  医師   POST /teachback/resolve {messageId: 依頼, action: confirm | reexplain}
+```
+
+| メソッド | パス | 誰が | ボディ（`sessionId` に加えて） | 成功時 |
+|---|---|---|---|---|
+| POST | `/analyze` | 患者 | `messageId` | 200。`status`・`translation`・`meaning`（答えなら `teachback_result`） |
+| POST | `/send` | 患者 | `messageId` | 200 `{status:"sent"}`。もう送っていれば何もしない。`confirmed` 以外は 409 |
+| POST | `/clarify/send` | 医師 | `messageId` + `candidateId`（そのまま）／ + `questionDoctor`（編集）／ `questionDoctor` + 任意で `messageId`・`factId`（自分で書く） | 200 `{messageId, candidateId}`。編集・自作は Gemini で訳す（選択肢なし） |
+| POST | `/clarify/update` | 医師 | `messageId`, `candidateId`, `action: hold｜dismiss｜restore` | 200。できない遷移は 409 |
+| POST | `/fact/update` | 医師 | `messageId`, `factId`, `action: confirm｜flag｜reset`, `note?` | 200。できない遷移は 409 |
+| POST | `/teachback/start` | 医師 | `messageId`（送信済みの医師の説明） | 200 `{messageId}` |
+| POST | `/teachback/resolve` | 医師 | `messageId`（依頼）, `action: confirm｜reexplain` | 200 |
+| POST | `/meaning/retry` | メンバー | `messageId`（`meaning.status = error` の発言） | 200。必要なければ 409 |
+
+- 医師だけの API を患者・第三者が呼ぶと 403。問診を作ってから `SESSION_MAX_HOURS`（12 時間）を過ぎると 410。
+- `/send` と医師の操作は Gemini を使わないので、呼び出し回数（`MAX_CALLS_PER_SESSION`）に数えない。
+- 以前の画面のように Firestore に直接 `status: "sent"` を書いても送れる（ルールで許している）が、その場合は答えを元の情報に結びつけない。
+
 ## 全体の流れ
 
 音声入力のときは、この前に `POST /transcribe` で文字にして、患者が確認してから下の `addDoc` をする（docs/stt.md）。
