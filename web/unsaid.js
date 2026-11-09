@@ -15,14 +15,14 @@ import {
   getFirestore, collection, doc, addDoc, getDoc, updateDoc, query, orderBy, onSnapshot, serverTimestamp, arrayUnion,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { transcribe as postWav } from "./stt.js";
-import { firebaseConfig, API_URL } from "./firebase-config.js";
+import { firebaseConfig, API_URL, FIRESTORE_DB } from "./firebase-config.js";
 import qrcode from "./vendor/qrcode.js";
 
 export { Recorder } from "./stt.js";
 export { API_URL };
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+export const db = FIRESTORE_DB === "(default)" ? getFirestore(app) : getFirestore(app, FIRESTORE_DB);
 
 // 匿名ログイン。同じブラウザなら再読み込みしても同じ uid のまま（session に入り直さなくてよい）。
 // 同じ PC で患者と医師を試すときは、片方をシークレットウィンドウにすると別の uid になる。

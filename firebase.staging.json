@@ -1,0 +1,12 @@
+{
+  "hosting": {
+    "public": "web",
+    "ignore": ["firebase.json", "firebase.staging.json", "**/.*", "**/*.test.mjs"],
+    "headers": [
+      { "source": "**/*.@(html|js|css)", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+    ]
+  },
+  "firestore": [
+    { "database": "staging", "rules": "firestore.rules" }
+  ]
+}

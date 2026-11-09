@@ -10,4 +10,11 @@ export const firebaseConfig = {
   appId: "1:799163399675:web:82ff5e00debd34473d1f5e",
 };
 
-export const API_URL = "https://unsaid-api-799163399675.asia-northeast1.run.app";
+// ステージング: Firebase Hosting のプレビューチャンネル（unsaid-devfest--<チャンネル名>-<ランダム>.web.app）で開いたときだけ。
+// 本番（unsaid-devfest.web.app）とは API（Cloud Run の別サービス）も Firestore（別の名前付きデータベース）も分ける。
+// 手順は docs/staging.md。本番の URL で開いたときの動きは変わらない
+export const STAGING = location.hostname.includes("--");
+export const API_URL = STAGING
+  ? "https://unsaid-api-staging-799163399675.asia-northeast1.run.app"
+  : "https://unsaid-api-799163399675.asia-northeast1.run.app";
+export const FIRESTORE_DB = STAGING ? "staging" : "(default)";
