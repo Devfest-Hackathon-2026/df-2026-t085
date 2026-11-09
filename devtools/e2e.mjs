@@ -116,7 +116,7 @@ const B_WRONG = "明天再来就可以了，是吗？";
 const B_RIGHT = "今天不回家，在医院等检查结果出来。";
 const C_EXPLAIN = "この薬は1日3回、食後に飲んでください。";
 const C_RIGHT = "一天三次，吃完饭以后吃。";
-const D_ASK = "このまま検査を続けてもいいですか？";
+const D_ASK = "痛み止めの注射をしましょうか？";
 const D_FINE = "没事。";
 const F_TEXT = "この薬は空腹時に飲まないでください。";
 const G_TEXT = "検査の前は8時間何も食べないでください。";
@@ -165,11 +165,11 @@ async function doctorFlow() {
   await doctorSays(D_ASK);
   await waitFor(() => sentBubble(D_ASK), "D の質問を送信");
   await waitFor(() => text(".d-pending").includes("意味を確認しています"), "患者が意味を確認中");
-  check(!text(".d-log").includes("検査を続けてください"), "意図が決まるまで訳は届かない");
+  check(!text(".d-log").includes("注射をお願いします"), "意図が決まるまで訳は届かない");
   await click(".d-pending .btn-link", "未検証の内容を見る");
   const rv = await waitFor(() => $(".d-reveal"), "未検証の原文");
   check(rv.textContent.includes(D_FINE) && rv.textContent.includes("未検証・意味は未確定"), "緊急時: 未検証と分かる形で原文を見られる");
-  await waitFor(() => text(".d-log").includes("はい、検査を続けてください（同意）。"), "本人が選んだ意味で届く");
+  await waitFor(() => text(".d-log").includes("はい、注射をお願いします（同意）。"), "本人が選んだ意味で届く");
   check(text(".d-pt.latest .d-meta").includes("本人が意味を確認"), "本人が意味を確認（AI の解釈と区別）");
 
   // ── シナリオ F: 否定が落ちた訳 → 照合で見つけて訳し直してから届く ──
@@ -189,7 +189,7 @@ async function doctorFlow() {
   await doctorSays(E_DOSE);
   await waitFor(() => sentBubble(E_DOSE), "E の説明を送信");
   const iss = await waitFor(() => $$(".d-cands").find((x) => x.textContent.includes("未解決事項")), "未解決事項");
-  check(iss.textContent.includes("1件") && iss.textContent.includes("指示の理解の相違") && iss.textContent.includes("tablet"), "未解決事項 1件（服薬の理解の相違）");
+  check(iss.textContent.includes("1件") && iss.textContent.includes("指示の理解の相違") && iss.textContent.includes("説明 1錠 / 理解 2錠"), "未解決事項 1件（服薬の理解の相違）");
   await click(".d-cands .d-more", "根拠（2件の発言）");
   const ev2 = await waitFor(() => $$(".d-cands .d-evidence").at(-1), "未解決事項の根拠");
   check(ev2.textContent.includes(E_DOSE) && ev2.textContent.includes(E_WRONG), "根拠の発言（説明と患者の言い直し）を開ける");
@@ -262,13 +262,13 @@ async function patientFlow(sid) {
   await waitFor(() => text().includes("你的回答"), "答えを送った");
 
   // ── D: 「没事」→ 自分の発言の意味を選ぶ ──
-  await waitFor(() => byText(".p-doctor", "我们可以继续检查吗"), "医師の質問 D");
+  await waitFor(() => byText(".p-doctor", "要给你打止痛针吗"), "医師の質問 D");
   await patientSays(D_FINE);
   await waitFor(() => text().includes("您说的“没事”是什么意思？"), "意図の確認");
   check($$(".p-option").length === 3 && byText(".p-links .btn-link", "都不是，我重新说") && byText(".p-links .btn-link", "用我自己的话说明"),
     "意味の選択肢・どれでもない・自分の言葉で");
   await new Promise((r) => setTimeout(r, 600)); // 医師が「未検証の内容を見る」を押す間
-  await click(".p-option", "可以，请继续检查。");
+  await click(".p-option", "可以，请给我打针。");
   await waitFor(() => text().includes("已发送") || text().includes("医生已读"), "送信済み");
 
   // ── F: 訳し直された正しい訳が届く ／ G: 未検証の印つきで届く ──

@@ -35,8 +35,8 @@ C_RIGHT_JA = "1日3回、ご飯を食べた後に飲みます。"
 E_TEXT = "I've had a headache for a while."
 
 # ── D: 発話意図（「没事」）──
-D_ASK = "このまま検査を続けてもいいですか？"
-D_ASK_ZH = "我们可以继续检查吗？"
+D_ASK = "痛み止めの注射をしましょうか？"
+D_ASK_ZH = "要给你打止痛针吗？"
 D_PAIN = "痛みはありますか？"
 D_PAIN_ZH = "你有疼痛吗？"
 D_HELP = "お手伝いしましょうか？"
@@ -44,9 +44,9 @@ D_HELP_ZH = "需要我帮你吗？"
 D_FINE = "没事。"
 D_DR_FINE = "大丈夫です。"
 D_OPTIONS = [
-    ("可以，请继续检查。", "はい、検査を続けてください（同意）。", "consent"),
+    ("不用了，我不需要打针。", "いいえ、注射は要りません（断る）。", "decline"),
+    ("可以，请给我打针。", "はい、注射をお願いします（同意）。", "consent"),
     ("我身体没事，不用担心。", "体調は大丈夫です。心配いりません。", "statement"),
-    ("不用了，我不想继续。", "いいえ、結構です。続けたくありません（拒否）。", "refuse"),
 ]
 D_DR_OPTIONS = [
     ("問題ありません。心配いりません。", "没有问题，不用担心。", "statement"),
@@ -87,7 +87,7 @@ TRANSLATIONS = {
     C_RIGHT: (C_RIGHT_JA, "一天三次，饭后吃。"),
     E_TEXT: ("しばらく前から頭痛があります。", "I've had a headache for a while."),
     "Yes, I have a little fever too.": ("はい、少し熱もあります。", "Yes, I have a little fever too."),
-    D_ASK: (D_ASK_ZH, "このまま検査を続けてもいいですか？"),
+    D_ASK: (D_ASK_ZH, "痛み止めの注射をしましょうか？"),
     D_PAIN: (D_PAIN_ZH, "痛みはありますか？"),
     D_HELP: (D_HELP_ZH, "お手伝いが必要ですか？"),
     G_TEXT: (G_BAD, "検査の前は何も食べないでください。"),
@@ -119,9 +119,9 @@ def translate(original, source_lang, target_lang, direction, clarification=None,
         if confirmed_intent:
             text = confirmed_intent["meaning_listener"] or f"[{target_lang}] {confirmed_intent['meaning_speaker']}"
             back = confirmed_intent["meaning_speaker"]
-        elif "痛" in last:
+        elif last == D_PAIN:
             text, back = "いいえ、痛みはありません。", "不疼。"
-        elif "手伝" in last:
+        elif last == D_HELP:
             text, back = "大丈夫です、手伝いは要りません。", "不用帮忙。"
         else:
             text, back = ("大丈夫です。", "没事。") if original == D_FINE else ("没事。", "大丈夫です。")
@@ -282,10 +282,10 @@ def source_agent(utterance, speaker, speaker_lang, listener_lang, turns=None):
     last = _last_doctor(turns)
     base = {"speech_act": "statement", "summary_listener": "", "interpretations": [], "question_speaker": "",
             "reason_speaker": "", "frame": FRAMES.get(utterance) or _generic_frame(utterance), "evidence": []}
-    if utterance == D_FINE and not ("痛" in last or "手伝" in last):
+    if utterance == D_FINE and last not in (D_PAIN, D_HELP):
         return _meta({**base, "intent_state": "clarification_required", "speech_act": "answer",
                       "question_speaker": "您说的“没事”是什么意思？",
-                      "reason_speaker": "“没事”可能是同意继续，也可能是说身体没事，或者是不用了。",
+                      "reason_speaker": "“没事”可能是不用打针，也可能是同意打针，或者是说身体没事。",
                       "interpretations": [{"meaning_speaker": a, "meaning_listener": b, "speech_act": c}
                                           for a, b, c in D_OPTIONS]})
     if utterance == D_DR_FINE and not turns:
@@ -295,7 +295,7 @@ def source_agent(utterance, speaker, speaker_lang, listener_lang, turns=None):
                       "interpretations": [{"meaning_speaker": a, "meaning_listener": b, "speech_act": c}
                                           for a, b, c in D_DR_OPTIONS]})
     if utterance == D_FINE:
-        frame = _frame("decline", entities=[]) if "手伝" in last else _frame(
+        frame = _frame("decline", entities=[]) if last == D_HELP else _frame(
             "answer", "negative", entities=[{"concept": "pain", "presence": "absent"}])
         return _meta({**base, "intent_state": "resolved", "speech_act": frame["speech_act"], "frame": frame})
     sa = base["frame"]["speech_act"]

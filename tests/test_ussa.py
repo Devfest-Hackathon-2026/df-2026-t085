@@ -204,7 +204,7 @@ def test_cross_check_dose_example():
                   frequency=[{"count": 2, "per": "day"}],
                   times=[{"kind": "part_of_day", "value": "morning"}, {"kind": "part_of_day", "value": "evening"}])
     diffs = U.cross_check(instr, wrong)
-    assert any("tablet" in d for d in diffs) and any("時間帯" in d for d in diffs)
+    assert "量: 説明 1錠 / 理解 2錠" in diffs and any("時間帯" in d for d in diffs)
     assert U.cross_check(instr, right) == []  # 正しく理解していれば何も出さない
 
 

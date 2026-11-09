@@ -237,7 +237,7 @@ def test_auditor_dose_misunderstanding_one_issue(api):
     assert len(issues) == 1  # ルールの照合と LLM が同じ食い違いを見つけても1件
     i = issues[0]
     assert i["type"] == "instruction_misunderstanding" and i["source"] == "rule" and set(i["related_utterances"]) == {d, p}
-    assert "tablet" in i["description"] and i["evidence"][0]["quote"] == F.E_WRONG
+    assert "説明 1錠 / 理解 2錠" in i["description"] and i["evidence"][0]["quote"] == F.E_WRONG
 
 
 def test_auditor_no_warning_for_correct_understanding(api):

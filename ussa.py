@@ -51,6 +51,35 @@ HAN = re.compile(r"[一-鿿]")
 MAX_TEXT = 300
 
 
+# 医師の画面に出す説明の言葉（内部のラベルや 8.0 のような表記を出さない）
+UNIT_JA = {"tablet": "錠", "capsule": "カプセル", "mg": "mg", "g": "g", "ml": "mL", "drop": "滴", "pack": "包", "times": "回",
+           "day": "日", "week": "週", "month": "か月", "hour": "時間", "minute": "分", "celsius": "℃", "year": "年", "other": ""}
+PER_JA = {"day": "1日", "week": "1週", "month": "1か月", "hour": "1時間", "meal": "1食", "other": "決まった期間"}
+PART_JA = {"am": "朝", "mid": "昼", "pm": "夕・夜"}
+TIME_JA = {"day+0": "今日", "day+1": "明日", "day+2": "明後日", "day-1": "昨日", "day-2": "一昨日", "week+0": "今週",
+           "week+1": "来週", "week-1": "先週", **{f"wd{i}": f"{d}曜" for i, d in enumerate("月火水木金土日", 1)},
+           **{str(i): f"{d}曜" for i, d in enumerate("月火水木金土日", 1)}}
+LABEL_JA = {"affirmative": "肯定", "negative": "否定", "mixed": "混在", "none": "なし", "must": "必要", "must_not": "禁止",
+            "should": "推奨", "should_not": "非推奨", "may": "可", "can": "できる", "cannot": "できない", "want": "希望",
+            "unknown": "不明", "consent": "同意", "refuse": "拒否", "accept": "受け入れ", "decline": "断る", "question": "質問",
+            "statement": "陳述", "instruction": "指示", "answer": "回答", "request": "依頼", "offer": "申し出",
+            "confirm_understanding": "理解の確認", "greeting": "挨拶", "other": "その他", "speaker": "話し手",
+            "addressee": "聞き手", "both": "双方", "third_party": "第三者", "unspecified": "不明", "certain": "断定",
+            "uncertain": "不確か"}
+
+
+def _ja(x):
+    return LABEL_JA.get(x, x)
+
+
+def _amount(vals, unit):
+    return "・".join(f"{_fmt(v)}{UNIT_JA.get(unit, '')}" for v in vals) or "なし"
+
+
+def _when(tokens):
+    return "・".join(TIME_JA.get(t, t) for t in tokens) or "なし"
+
+
 def now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
@@ -308,7 +337,7 @@ def rule_check(source, src_lang, translation, tgt_lang):
     ts, tt = time_tokens(source), time_tokens(translation)
     if ts != tt:
         issues.append({"type": "time_change", "strength": "strong", "layer": "rule",
-                       "detail": f"日時の表現が違う（原文 {sorted(ts) or '-'} / 訳文 {sorted(tt) or '-'}）"})
+                       "detail": f"日時が違う（原文 {_when(sorted(ts))} / 訳文 {_when(sorted(tt))}）"})
     if has_negation(source, src_lang) != has_negation(translation, tgt_lang):
         issues.append({"type": "polarity_flip", "strength": "weak", "layer": "rule",
                        "detail": "否定の表現が片方にしかない（言い方の違いのこともある）"})
@@ -339,45 +368,45 @@ def compare_frames(a, b):
 
     same_action = bool(a["action"]) and _norm(a["action"]) == _norm(b["action"])
     if {a["polarity"], b["polarity"]} == {"affirmative", "negative"}:
-        add("polarity_flip", "strong" if same_action else "medium", f"肯定・否定が違う（{a['polarity']} / {b['polarity']}）")
+        add("polarity_flip", "strong" if same_action else "medium", f"肯定・否定が違う（原文 {_ja(a['polarity'])} / 訳文 {_ja(b['polarity'])}）")
     if (a["modality"] in ("must_not", "should_not", "cannot")) != (b["modality"] in ("must_not", "should_not", "cannot")) \
             and "unknown" not in (a["modality"], b["modality"]) and "none" not in (a["modality"], b["modality"]):
-        add("polarity_flip", "strong", f"禁止・不可が片方だけ（{a['modality']} / {b['modality']}）")
+        add("polarity_flip", "strong", f"禁止・不可が片方だけ（原文 {_ja(a['modality'])} / 訳文 {_ja(b['modality'])}）")
     yes, no = {"consent", "accept"}, {"refuse", "decline"}
     if (a["speech_act"] in yes and b["speech_act"] in no) or (a["speech_act"] in no and b["speech_act"] in yes):
-        add("consent_refusal_confusion", "strong", f"同意と拒否が違う（{a['speech_act']} / {b['speech_act']}）")
+        add("consent_refusal_confusion", "strong", f"同意と拒否が違う（原文 {_ja(a['speech_act'])} / 訳文 {_ja(b['speech_act'])}）")
     if (a["speech_act"] == "question") != (b["speech_act"] == "question") and "other" not in (a["speech_act"], b["speech_act"]):
-        add("other", "strong", f"質問かどうかが違う（{a['speech_act']} / {b['speech_act']}）")
+        add("other", "strong", f"質問かどうかが違う（原文 {_ja(a['speech_act'])} / 訳文 {_ja(b['speech_act'])}）")
     for unit in {q["unit"] for q in a["quantities"]} | {q["unit"] for q in b["quantities"]}:
         va = sorted(q["value"] for q in a["quantities"] if q["unit"] == unit)
         vb = sorted(q["value"] for q in b["quantities"] if q["unit"] == unit)
         if va and not vb:
-            add("quantity_change", "strong", f"{unit} の量が訳文に無い（{va}）")
+            add("quantity_change", "strong", f"量（{_amount(va, unit)}）が訳文に無い")
         elif vb and not va:
-            add("addition", "strong", f"訳文に原文に無い {unit} の量（{vb}）")
+            add("addition", "strong", f"訳文に原文に無い量（{_amount(vb, unit)}）がある")
         elif set(va) != set(vb):
-            add("quantity_change", "strong", f"{unit} の量が違う（{va} / {vb}）")
+            add("quantity_change", "strong", f"量が違う（原文 {_amount(va, unit)} / 訳文 {_amount(vb, unit)}）")
     for per in {f["per"] for f in a["frequency"]} | {f["per"] for f in b["frequency"]}:
         ca = sorted(f["count"] for f in a["frequency"] if f["per"] == per)
         cb = sorted(f["count"] for f in b["frequency"] if f["per"] == per)
         if set(ca) != set(cb):
-            add("frequency_change", "strong", f"1{per} あたりの回数が違う（{ca or '-'} / {cb or '-'}）")
+            add("frequency_change", "strong", f"{PER_JA.get(per, per)}あたりの回数が違う（原文 {_amount(ca, 'times')} / 訳文 {_amount(cb, 'times')}）")
     ta = {(t["kind"], t["value"]) for t in a["times"] if t["kind"] in _HARD_TIME_KINDS}
     tb = {(t["kind"], t["value"]) for t in b["times"] if t["kind"] in _HARD_TIME_KINDS}
     if ta != tb:
-        add("time_change", "strong", f"日時が違う（{sorted(ta) or '-'} / {sorted(tb) or '-'}）")
+        add("time_change", "strong", f"日時が違う（原文 {_when(v for _, v in sorted(ta))} / 訳文 {_when(v for _, v in sorted(tb))}）")
     pa = {_PART.get(t["value"]) for t in a["times"] if t["kind"] == "part_of_day"} - {None}
     pb = {_PART.get(t["value"]) for t in b["times"] if t["kind"] == "part_of_day"} - {None}
     if pa and pb and pa != pb:
-        add("time_change", "strong", f"時間帯が違う（{sorted(pa)} / {sorted(pb)}）")
+        add("time_change", "strong", f"時間帯が違う（原文 {'・'.join(PART_JA[x] for x in sorted(pa))} / 訳文 {'・'.join(PART_JA[x] for x in sorted(pb))}）")
     elif bool(pa) != bool(pb):
         add("time_change", "medium", "時間帯が片方にしかない")
     if a["conditions"] and not b["conditions"]:
-        add("condition_missing", "strong", f"条件が訳文に無い（{a['conditions']}）")
+        add("condition_missing", "strong", "条件（〜まで・〜なら など）が訳文に無い")
     if {a["actor"], b["actor"]} == {"speaker", "addressee"}:
-        add("actor_change", "medium", f"行為の主体が違う（{a['actor']} / {b['actor']}）")
+        add("actor_change", "medium", f"誰がするかが違う（原文 {_ja(a['actor'])} / 訳文 {_ja(b['actor'])}）")
     if {a["certainty"], b["certainty"]} == {"certain", "uncertain"}:
-        add("certainty_change", "medium", f"確からしさが違う（{a['certainty']} / {b['certainty']}）")
+        add("certainty_change", "medium", f"確からしさが違う（原文 {_ja(a['certainty'])} / 訳文 {_ja(b['certainty'])}）")
     eb = {e["concept"]: e["presence"] for e in b["medical_entities"]}
     for e in a["medical_entities"]:
         p = eb.get(e["concept"])
@@ -627,22 +656,22 @@ def cross_check(instruction, restatement):
         a = {q["value"] for q in instruction["quantities"] if q["unit"] == unit}
         b = {q["value"] for q in restatement["quantities"] if q["unit"] == unit}
         if a != b:
-            out.append(f"量（{unit}）: 説明 {sorted(a)} / 理解 {sorted(b)}")
+            out.append(f"量: 説明 {_amount(sorted(a), unit)} / 理解 {_amount(sorted(b), unit)}")
     for per in {f["per"] for f in instruction["frequency"]} & {f["per"] for f in restatement["frequency"]}:
         a = {f["count"] for f in instruction["frequency"] if f["per"] == per}
         b = {f["count"] for f in restatement["frequency"] if f["per"] == per}
         if a != b:
-            out.append(f"回数（1{per}）: 説明 {sorted(a)} / 理解 {sorted(b)}")
+            out.append(f"回数（{PER_JA.get(per, per)}）: 説明 {_amount(sorted(a), 'times')} / 理解 {_amount(sorted(b), 'times')}")
     pa = {_PART.get(t["value"]) for t in instruction["times"] if t["kind"] == "part_of_day"} - {None}
     pb = {_PART.get(t["value"]) for t in restatement["times"] if t["kind"] == "part_of_day"} - {None}
     if pa and pb and not pb <= pa:
-        out.append(f"時間帯: 説明 {sorted(pa)} / 理解 {sorted(pb)}")
+        out.append(f"時間帯: 説明 {'・'.join(PART_JA[x] for x in sorted(pa))} / 理解 {'・'.join(PART_JA[x] for x in sorted(pb))}")
     if pa and pb and pa != pb and len(pa) > len(pb):
-        out.append(f"時間帯: 説明 {sorted(pa)} の一部しか理解に無い（{sorted(pb)}）")
+        out.append(f"時間帯: 説明は {'・'.join(PART_JA[x] for x in sorted(pa))}、理解は {'・'.join(PART_JA[x] for x in sorted(pb))} だけ")
     ta = {t["value"] for t in instruction["times"] if t["kind"] in ("relative_day", "relative_week", "weekday")}
     tb = {t["value"] for t in restatement["times"] if t["kind"] in ("relative_day", "relative_week", "weekday")}
     if ta and tb and ta != tb:
-        out.append(f"日: 説明 {sorted(ta)} / 理解 {sorted(tb)}")
+        out.append(f"日: 説明 {_when(sorted(ta))} / 理解 {_when(sorted(tb))}")
     # 「してよい／してはいけない」の逆: 同じ行為そのものが、片方では禁止・否定され、もう片方ではされていない。
     # 文の否定が別の行為に向いている（「帰らずに待つ」の否定は「帰る」）ときは数えない
     def negates_action(f):

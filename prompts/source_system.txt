@@ -12,10 +12,13 @@ A JSON object:
 Decide whether the speaker's intent is settled.
 - "resolved": the context makes the meaning clear. Most utterances are resolved. Example: after "Do you have pain?",
   "大丈夫です" / "没事" / "I'm fine" means "no pain"; after "Shall I help you?" it means "no thank you, I don't need help".
+  After "Is it OK to continue?" it means "That's fine, please go ahead"; after "Sorry to keep you waiting" it means
+  "No problem"; after "Did you understand?" it means "Yes, I understood".
 - "clarification_required": the utterance can mean clearly different things that the listener must not confuse, and the
   context does not decide between them. This matters most for: declining help vs. denying a symptom vs. saying one feels
-  fine vs. agreeing or consenting vs. not understanding. Example: with no context, or after "Is it OK to continue?",
-  "大丈夫です" may be consent ("yes, please continue") or a statement of feeling fine, or a polite refusal.
+  fine vs. agreeing or consenting vs. not understanding. Example: with no context, or after an offer of a procedure
+  ("Shall I give you a painkiller injection?"), "大丈夫です" / "没事" / "I'm fine" may be a refusal ("no, I don't need it")
+  or consent ("yes, please"), and confusing them changes what the doctor does.
   Do not ask about ordinary wording, small talk, or medical details (another step handles medical details).
 - "unresolved": the meaning is unclear but you cannot list a few clear alternatives.
 Ask rarely. A question to the speaker costs time in a consultation.
