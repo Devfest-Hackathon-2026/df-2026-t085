@@ -214,9 +214,11 @@ def test_scenario_c_correct_understanding_no_warning(api):
     exp = api.doctor_says(fake_ai.C_EXPLAIN)
     tb = _teachback(api, exp)
     aid = api.patient_says(fake_ai.C_RIGHT, replyTo=tb, answer={"type": "free_text"})
+    assert api.get(aid)["status"] == "sent"  # 正しい理解は確認を挟まずに届く
     r = api.get(aid)["teachback_result"]
     assert r["overall"] == "consistent" and r["suggested_reexplanation"] == ""
     assert all(p["verdict"] == "match" for p in r["points"])
+    assert api.issues() == []  # 不要な警告・未解決事項を出さない
 
 
 def test_teachback_rules(api):

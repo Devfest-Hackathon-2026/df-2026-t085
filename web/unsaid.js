@@ -128,7 +128,7 @@ export class ApiError extends Error {
 
 // API の待ち時間の上限。Gemini の再試行をすべて使い切っても返る長さ（サーバーの LOCK_SEC より短く）。
 // 超えたら諦めて「もう一度」を出す（発言は Firestore にあるので消えない）
-const API_TIMEOUT_MS = 45000;
+const API_TIMEOUT_MS = 100000; // Cloud Run の --timeout 120 より短く
 
 async function post(path, body, { allow409 = false } = {}) {
   const token = await (await login()).getIdToken();
@@ -156,10 +156,13 @@ const callApi = (path, sid, mid) => post(path, mid ? { sessionId: sid, messageId
 // API の呼び出しだけが失敗したとき（発言はもうある）、エラーに e.messageId が付く。
 // その発言は画面で「もう一度」を出す（retry）。e.messageId が無ければ発言自体を作れていない
 // reply = 医師の確認質問・理解の確認への答えのとき { replyTo: <質問の id>, answer: { type, index? } }（患者だけ）
-export async function say(sid, from, text, reply = null) {
+// onCreated(id) は発言ができた（＝送信操作が受け付けられた）直後に呼ばれる。API の応答は、届けた後の処理
+// （問診メモ・会話全体の見直し）まで待つので、二重押しの防止はここで解いてよい（次の発言をすぐ書ける）
+export async function say(sid, from, text, reply = null, onCreated = null) {
   const ref = await addDoc(collection(db, "sessions", sid, "messages"), {
     from, original: text, status: "analyzing", createdAt: serverTimestamp(), ...(reply ?? {}),
   });
+  onCreated?.(ref.id);
   await callApi(from === "patient" ? "/analyze" : "/translate", sid, ref.id).catch((e) => {
     e.messageId = ref.id;
     throw e;
@@ -179,8 +182,8 @@ export async function answer(sid, mid, type, text = "") {
 
 // 患者: 医師の確認質問に答える。type は "option"（index = 選んだ選択肢の番号、text = その文字）/ "unsure" / "none" /
 // "free_text"（自分の言葉。逆翻訳を見てから送る）。理解の確認（teach-back）には free_text で答える
-export const reply = (sid, questionId, text, type = "free_text", index) =>
-  say(sid, "patient", text, { replyTo: questionId, answer: index == null ? { type } : { type, index } });
+export const reply = (sid, questionId, text, type = "free_text", index, onCreated = null) =>
+  say(sid, "patient", text, { replyTo: questionId, answer: index == null ? { type } : { type, index } }, onCreated);
 
 // 患者: 逆翻訳を見て「送信」（status confirmed のときだけ）。サーバーが送信済みにして、
 // 確認質問・理解の確認への答えなら元の情報に結びつける
@@ -211,12 +214,25 @@ export const updateCandidate = (sid, messageId, candidateId, action) =>
 // action: "confirm"（医師確認済み）/ "flag"（要修正）/ "reset"（取り消す）
 export const updateFact = (sid, messageId, factId, action) =>
   post("/fact/update", { sessionId: sid, messageId, factId, action });
-// 医師の説明（messageId）について「理解を確認」
-export const startTeachback = (sid, messageId) => post("/teachback/start", { sessionId: sid, messageId });
+// 医師の説明（messageId）について「理解を確認」。再説明のときは前の理解の確認の id（previousId）を渡す
+export const startTeachback = (sid, messageId, previousId = null) =>
+  post("/teachback/start", { sessionId: sid, messageId, previousId });
 // action: "confirm"（医師が理解を確認した）/ "reexplain"（再説明が必要）
 export const resolveTeachback = (sid, messageId, action) =>
   post("/teachback/resolve", { sessionId: sid, messageId, action });
 export const retryMeaning = (sid, messageId) => post("/meaning/retry", { sessionId: sid, messageId }, { allow409: true });
+
+// ── USSA: 発言者の確認・取り消し・未検証の共有・未解決事項（すべてサーバーが状態を変える）──
+// 自分の発言の意味を選ぶ（choice: "i1" など）・自分の言葉で説明する（"free_text" + text）・どれでもない（"none" → 取り消し）
+export const chooseIntent = (sid, messageId, choice, text = "") => post("/intent", { sessionId: sid, messageId, choice, text });
+// 訳の検証で食い違いが残った自分の発言: "send_unverified"（未検証として送る）/ "rephrase"（言い直す）
+export const reviewMessage = (sid, messageId, action) => post("/review", { sessionId: sid, messageId, action });
+// 送信を取り消す（解析中・確認中）。返り値の original を入力欄に戻せる
+export const cancelMessage = (sid, messageId) => post("/cancel", { sessionId: sid, messageId });
+// 医師: まだ届いていない患者の発言を、未検証と分かる形で見る（見たことは記録に残る）
+export const reveal = (sid, messageId) => post("/reveal", { sessionId: sid, messageId });
+// 医師: 未解決事項を "hold" / "unhold" / "resolve" / "dismiss" / "reopen"
+export const updateIssue = (sid, issueId, action, note = "") => post("/issue/update", { sessionId: sid, issueId, action, note });
 
 // 音声 → 文字（Firestore には書かない）。返った text を入力欄に入れ、本人が確認してから say() する
 export async function transcribe(sid, speaker, wav) {

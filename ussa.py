@@ -643,9 +643,13 @@ def cross_check(instruction, restatement):
     tb = {t["value"] for t in restatement["times"] if t["kind"] in ("relative_day", "relative_week", "weekday")}
     if ta and tb and ta != tb:
         out.append(f"日: 説明 {sorted(ta)} / 理解 {sorted(tb)}")
-    instr_neg = instruction["modality"] in ("must_not", "should_not")
-    rest_neg = restatement["modality"] in ("must_not", "should_not") or restatement["polarity"] == "negative"
-    if instruction["action"] and _norm(instruction["action"]) == _norm(restatement["action"]) and instr_neg != rest_neg:
+    # 「してよい／してはいけない」の逆: 同じ行為そのものが、片方では禁止・否定され、もう片方ではされていない。
+    # 文の否定が別の行為に向いている（「帰らずに待つ」の否定は「帰る」）ときは数えない
+    def negates_action(f):
+        act = _norm(f["action"])
+        return f["modality"] in ("must_not", "should_not") or act in {_norm(x) for x in f.get("negated", [])}
+    if instruction["action"] and _norm(instruction["action"]) == _norm(restatement["action"]) \
+            and negates_action(instruction) != negates_action(restatement):
         out.append("してよい／してはいけないが逆")
     return list(dict.fromkeys(out))
 

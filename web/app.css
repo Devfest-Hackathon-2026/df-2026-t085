@@ -275,3 +275,16 @@ mark { background: var(--mark); color: var(--ink); border-radius: 4px; padding: 
 .p-consent { margin: 20px 0 0; padding-left: 22px; display: flex; flex-direction: column; gap: 12px; font-size: 17px; line-height: 1.5; }
 .p-consent-title { font-size: 26px; font-weight: 700; margin: 0; }
 .d-meta .kind { font-size: 12px; font-weight: 600; color: var(--sub); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+
+/* USSA: 送信前の確認（意図・訳の照合）・未検証の共有。必要なときだけ出す */
+.d-input .d-clear { min-height: 40px; padding: 0 6px; color: var(--faint); }
+.d-mine .d-cand, .d-mine .d-tbres { text-align: left; margin-top: 10px; }
+.d-intent .opts-col { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.d-intent .opts-col .btn-small { text-align: left; height: auto; min-height: 36px; padding: 6px 14px; line-height: 1.4; }
+.d-meta .ver { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--faint); }
+.d-reveal { display: flex; flex-direction: column; gap: 4px; max-width: 90%; }
+.d-reveal strong { display: inline-flex; align-items: center; gap: 6px; }
+.p-review-issues { margin: 12px 0 0; padding-left: 20px; font-size: 16px; color: var(--sub); line-height: 1.5; }
+.p-sent-read { font-size: 15px; color: var(--sub); margin-top: 6px; line-height: 1.5; }
+.p-doctor .p-unverified { font-size: 14px; color: var(--warn-ink); background: var(--warn-soft); border-radius: 8px; padding: 6px 10px; margin-top: 8px; }
+.p-input .p-clear { min-width: 0; padding: 0 8px; background: transparent; color: var(--faint); }

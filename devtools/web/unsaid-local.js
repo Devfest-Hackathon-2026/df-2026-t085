@@ -126,7 +126,7 @@ async function post(path, body, { allow409 = false } = {}) {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer local:${uid}` },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(45000),
+      signal: AbortSignal.timeout(100000),
     });
   } catch (e) {
     throw new ApiError(0, e.name === "TimeoutError" ? "timeout" : "network");
@@ -138,9 +138,10 @@ async function post(path, body, { allow409 = false } = {}) {
 }
 const callApi = (path, sid, mid) => post(path, mid ? { sessionId: sid, messageId: mid } : { sessionId: sid }, { allow409: true });
 
-export async function say(sid, from, text, reply = null) {
+export async function say(sid, from, text, reply = null, onCreated = null) {
   const r = await dev("/_dev/add", { path: `sessions/${sid}/messages`,
     data: { from, original: text, status: "analyzing", createdAt: TS, ...(reply ?? {}) } });
+  onCreated?.(r.id);
   await callApi(from === "patient" ? "/analyze" : "/translate", sid, r.id).catch((e) => {
     e.messageId = r.id;
     throw e;
@@ -148,8 +149,8 @@ export async function say(sid, from, text, reply = null) {
   return r.id;
 }
 
-export const reply = (sid, questionId, text, type = "free_text", index) =>
-  say(sid, "patient", text, { replyTo: questionId, answer: index == null ? { type } : { type, index } });
+export const reply = (sid, questionId, text, type = "free_text", index, onCreated = null) =>
+  say(sid, "patient", text, { replyTo: questionId, answer: index == null ? { type } : { type, index } }, onCreated);
 
 export async function answer(sid, mid, type, text = "") {
   await dev("/_dev/update", { path: `sessions/${sid}/messages/${mid}`, data: { "clarification.answer": { type, text } } });
@@ -173,10 +174,23 @@ export const updateCandidate = (sid, messageId, candidateId, action) =>
   post("/clarify/update", { sessionId: sid, messageId, candidateId, action });
 export const updateFact = (sid, messageId, factId, action) =>
   post("/fact/update", { sessionId: sid, messageId, factId, action });
-export const startTeachback = (sid, messageId) => post("/teachback/start", { sessionId: sid, messageId });
+export const startTeachback = (sid, messageId, previousId = null) =>
+  post("/teachback/start", { sessionId: sid, messageId, previousId });
 export const resolveTeachback = (sid, messageId, action) =>
   post("/teachback/resolve", { sessionId: sid, messageId, action });
 export const retryMeaning = (sid, messageId) => post("/meaning/retry", { sessionId: sid, messageId }, { allow409: true });
+
+// ── USSA: 発言者の確認・取り消し・未検証の共有・未解決事項（すべてサーバーが状態を変える）──
+// 自分の発言の意味を選ぶ（choice: "i1" など）・自分の言葉で説明する（"free_text" + text）・どれでもない（"none" → 取り消し）
+export const chooseIntent = (sid, messageId, choice, text = "") => post("/intent", { sessionId: sid, messageId, choice, text });
+// 訳の検証で食い違いが残った自分の発言: "send_unverified"（未検証として送る）/ "rephrase"（言い直す）
+export const reviewMessage = (sid, messageId, action) => post("/review", { sessionId: sid, messageId, action });
+// 送信を取り消す（解析中・確認中）。返り値の original を入力欄に戻せる
+export const cancelMessage = (sid, messageId) => post("/cancel", { sessionId: sid, messageId });
+// 医師: まだ届いていない患者の発言を、未検証と分かる形で見る（見たことは記録に残る）
+export const reveal = (sid, messageId) => post("/reveal", { sessionId: sid, messageId });
+// 医師: 未解決事項を "hold" / "unhold" / "resolve" / "dismiss" / "reopen"
+export const updateIssue = (sid, issueId, action, note = "") => post("/issue/update", { sessionId: sid, issueId, action, note });
 
 export async function transcribe(sid, speaker, wav) {
   const { uid } = await login();

@@ -26,6 +26,34 @@ const LEGACY_CATEGORY = { symptom: "symptom", onset: "onset", frequency: "freque
   medication: "medication", allergy: "allergy" };
 
 export const isShown = (m) => ["sent", "received"].includes(m.status);
+
+// ── USSA: 訳の検証の表示・未解決事項 ──
+// 訳の照合の結果（Verification Engine）。VERIFIED は「検出した相違なし」で、正しさの証明ではない
+export function verificationOf(m) {
+  const g = m.gate;
+  if (!g) return null;
+  const status = g.verification?.status;
+  if (g.override === "speaker_ack") return { level: "warn", label: "訳は未検証", status };
+  if (status === "AMBIGUOUS") return { level: "soft", label: "訳の一部が未照合", status };
+  if (status === "VERIFIED") return { level: "ok", label: "訳の照合: 相違なし", status };
+  return null; // PRETRANSLATED（選択肢の対訳）など
+}
+export const unverified = (m) => m.gate?.override === "speaker_ack";
+
+export const ISSUE_LABEL = {
+  contradiction: "前の発言との矛盾", understanding_mismatch: "理解の相違", unanswered_question: "未回答の質問",
+  unresolved_clarification: "未解決の確認", quantity_time_mismatch: "数量・日時の食い違い",
+  insufficient_explanation: "説明に足りない点", inconsistent_with_past: "前の発言との食い違い",
+  meaning_drift: "確認した意味の変化", instruction_misunderstanding: "指示の理解の相違",
+};
+export const ISSUE_STATUS_LABEL = { OPEN: "", CLARIFICATION_REQUESTED: "確認中", ANSWERED: "回答あり" };
+const ACTIVE = ["OPEN", "CLARIFICATION_REQUESTED", "ANSWERED"];
+const SEV = { high: 0, medium: 1, low: 2 };
+export function activeIssues(audit) {
+  const all = (audit?.issues ?? []).filter((i) => ACTIVE.includes(i.status))
+    .sort((a, b) => (SEV[a.severity] ?? 1) - (SEV[b.severity] ?? 1));
+  return { open: all.filter((i) => !i.held), held: all.filter((i) => i.held) };
+}
 const key = (t) => (t ?? "").replace(/[。、．，,.!！?？\s（）()「」]/g, "");
 
 // 発言の facts（新しい meaning.facts。無ければ旧い facts を同じ形にする）
@@ -132,9 +160,9 @@ export const TB_LABEL = {
 // ── カルテ用の文章（医師が編集してから貼る）。問診メモと同じデータから作り、原文に無い診断名・検査結果は足さない ──
 const MARK = { doctor_confirmed: "［医］", patient_answered: "［患］", unconfirmed: "［未］", needs_correction: "［要修正］" };
 const pol = (f) => (f.polarity === "denied" ? "（なし）" : f.polarity === "uncertain" ? "（本人も不確か）" : "");
-const line = (it) => `${it.text}${pol(it.fact)}${MARK[it.fact.status] ?? ""}`;
+const line = (it) => `${it.text}${pol(it.fact)}${MARK[it.fact.status] ?? ""}${unverified(it.msg) ? "［訳未検証］" : ""}`;
 
-export function karteText(msgs, session, today = new Date()) {
+export function karteText(msgs, session, today = new Date(), audit = session?.audit) {
   const memo = clinicalMemo(msgs);
   const cands = candidates(msgs);
   const tbs = teachbacks(msgs);
@@ -170,9 +198,12 @@ export function karteText(msgs, session, today = new Date()) {
     ...cands.done.filter((c) => c.status === "dismissed").map((c) => `・「${c.source_quote}」：${c.unresolved || c.meaning_doctor}（医師の判断で確認を省略）`),
   ];
   const flagged = [...memo.symptoms, ...[...memo.others.values()].flat()].filter((it) => it.fact.status === "needs_correction");
-  if (pending.length || flagged.length) {
+  const iss = activeIssues(audit);
+  const issues = [...iss.open, ...iss.held].map((i) =>
+    `・${ISSUE_LABEL[i.type] ?? i.type}：${i.description}${i.held ? "（保留）" : ""}${ISSUE_STATUS_LABEL[i.status] ? `（${ISSUE_STATUS_LABEL[i.status]}）` : ""}`);
+  if (pending.length || flagged.length || issues.length) {
     L.push("", "■未確認事項");
-    L.push(...pending, ...flagged.map((it) => `・${it.text}（要修正）`));
+    L.push(...pending, ...flagged.map((it) => `・${it.text}（要修正）`), ...issues);
   }
   if (memo.otherOrder.length || memo.notMentioned.length) {
     L.push("", "■背景・既往・服薬・アレルギーなど");

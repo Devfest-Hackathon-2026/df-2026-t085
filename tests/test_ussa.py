@@ -208,6 +208,17 @@ def test_cross_check_dose_example():
     assert U.cross_check(instr, right) == []  # 正しく理解していれば何も出さない
 
 
+def test_cross_check_negation_about_another_action_is_not_a_flip():
+    # 説明「帰らずに待って」と理解「家に帰らず病院で待つ」: 否定は「帰る」に向いていて、「待つ」は両方とも肯定
+    instr = frame(speech_act="instruction", modality="must", action="wait", negated=["go home"])
+    right = frame(speech_act="confirm_understanding", polarity="negative", action="wait", negated=["go home"])
+    assert U.cross_check(instr, right) == []
+    # 説明「空腹時に飲まないで」と理解「空腹で飲む」: 同じ行為の禁止と肯定 → 逆
+    no = frame(speech_act="instruction", polarity="negative", modality="must_not", action="take medicine")
+    yes = frame(speech_act="confirm_understanding", polarity="affirmative", action="take medicine")
+    assert U.cross_check(no, yes) == ["してよい／してはいけないが逆"]
+
+
 def test_issue_requires_grounded_evidence_and_is_not_repeated():
     a = U.empty_audit()
     raw = {"new_issues": [{"type": "instruction_misunderstanding", "description_doctor": "朝に2錠と理解",

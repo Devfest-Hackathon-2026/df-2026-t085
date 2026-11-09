@@ -9,7 +9,8 @@
 </head>
 <body>
 <!-- 患者のスマホ（UI 案B v2）。医師 PC の QR から ?s=<session id> で開く。
-     1画面に1つのことだけ: 言語 → 同意 → 話す → 医師にこう伝わる → 送信。状態はすべて watchMessages から決める。
+     1画面に1つのことだけ: 言語 → 同意 → 話す（文字を確かめて「送信」）→ 意味と訳の確認（必要なときだけ）→ 医師に届く。
+     状態はすべて watchMessages から決める。送信は1回だけで、意図の解析・訳の照合（Safety Gate）を通ったものが届く。
      医師が確認質問・理解の確認を送ると、話す画面の医師の吹き出しに出る（選択肢で答えるか、いつもどおり話して答える） -->
 <main id="app"></main>
 <script type="module">
@@ -33,6 +34,11 @@ const T = {
     question: "The doctor asks", answerHint: "Choose one, or answer in your own words", answerPlaceholder: "Or type your answer",
     tbTitle: "Checking understanding", tbHint: "Tap and say it in your own words", yourAnswer: "Your answer", change: "Change answer",
     consentTitle: "Before you start", agree: "Agree and start",
+    verifying: "Checking the translation…", intentNone: "None of these — I'll say it again", intentOwn: "Explain in my own words",
+    intentOwnPlaceholder: "Write what you meant", intentQ: "What did you mean?", reviewTitle: "The translation may not match what you said",
+    reviewDoctorReads: "The doctor would read", rephrase: "Say it differently", sendAnyway: "Send anyway (marked as not checked)",
+    doctorRead: "The doctor read", sayAgain: "Not right? Say it again", clear: "Clear",
+    unverifiedFromDoctor: "This translation could not be fully checked. If anything is unclear, ask the doctor.",
     consent: [
       "This app uses AI (Google Gemini) to translate between you and the doctor.",
       "AI can make mistakes. Before sending, you will see what the doctor will read.",
@@ -55,6 +61,10 @@ const T = {
     question: "医生想确认", answerHint: "请选一个，或用你自己的话回答", answerPlaceholder: "也可以在这里输入回答",
     tbTitle: "确认理解", tbHint: "点一下，用你自己的话说", yourAnswer: "你的回答", change: "修改回答",
     consentTitle: "开始之前", agree: "同意并开始",
+    verifying: "正在核对翻译…", intentNone: "都不是，我重新说", intentOwn: "用我自己的话说明", intentOwnPlaceholder: "写下你的意思",
+    intentQ: "你的意思是？", reviewTitle: "翻译可能和你的意思不一样", reviewDoctorReads: "医生会看到", rephrase: "换个说法",
+    sendAnyway: "仍然发送（标记为未核对）", doctorRead: "医生看到的是", sayAgain: "不对？重新说", clear: "清除",
+    unverifiedFromDoctor: "这句翻译未能完全核对。如果不清楚，请问医生。",
     consent: [
       "本应用使用 AI（Google Gemini）在你和医生之间翻译。",
       "AI 可能会出错。发送前，你可以看到医生会读到的内容。",
@@ -77,6 +87,11 @@ const T = {
     question: "Bác sĩ hỏi", answerHint: "Hãy chọn một, hoặc trả lời bằng lời của bạn", answerPlaceholder: "Hoặc gõ câu trả lời",
     tbTitle: "Kiểm tra mức hiểu", tbHint: "Chạm và nói lại bằng lời của bạn", yourAnswer: "Câu trả lời của bạn", change: "Sửa câu trả lời",
     consentTitle: "Trước khi bắt đầu", agree: "Đồng ý và bắt đầu",
+    verifying: "Đang kiểm tra bản dịch…", intentNone: "Không phải, tôi sẽ nói lại", intentOwn: "Giải thích bằng lời của tôi",
+    intentOwnPlaceholder: "Viết ý của bạn", intentQ: "Ý bạn là gì?", reviewTitle: "Bản dịch có thể khác với ý của bạn",
+    reviewDoctorReads: "Bác sĩ sẽ đọc", rephrase: "Nói cách khác", sendAnyway: "Vẫn gửi (đánh dấu chưa kiểm tra)",
+    doctorRead: "Bác sĩ đã đọc", sayAgain: "Không đúng? Nói lại", clear: "Xóa",
+    unverifiedFromDoctor: "Bản dịch này chưa được kiểm tra đầy đủ. Nếu chưa rõ, hãy hỏi bác sĩ.",
     consent: [
       "Ứng dụng này dùng AI (Google Gemini) để dịch giữa bạn và bác sĩ.",
       "AI có thể dịch sai. Trước khi gửi, bạn sẽ thấy bác sĩ sẽ đọc gì.",
@@ -126,11 +141,17 @@ function view() {
   if (!S.lang) return { name: S.pendingLang ? "consent" : "join" };
   const mine = S.msgs.filter((m) => m.from === "patient");
   const last = mine.at(-1);
-  const active = last && !["sent", "received"].includes(last.status) && !S.dismissed.has(last.id) ? last : null;
+  const active = last && !["sent", "received", "cancelled"].includes(last.status) && !S.dismissed.has(last.id) ? last : null;
   if (active) {
     const c = active.clarification;
     if (active.status === "error" || watch?.isStuck(active)) return { name: "error", m: active };
-    if (active.status === "analyzing") return { name: "wait", m: active, text: t.checking, step: 1 };
+    if (active.status === "analyzing") {
+      return { name: "wait", m: active, text: active.gate?.state === "VERIFYING" ? t.verifying : t.checking, step: 1 };
+    }
+    // 自分の発言の意味が文脈で決まらない → 本人に聞く。訳の照合で相違が残った → 本人が決める（自動では送らない）
+    if (active.status === "awaiting_intent" && S.busy !== active.id) return { name: "intent", m: active };
+    if (active.status === "needs_review" && S.busy !== active.id) return { name: "review", m: active };
+    if (["awaiting_intent", "needs_review"].includes(active.status)) return { name: "wait", m: active, text: t.translating, step: 2 };
     if (active.status === "clarifying" && !c?.answer && S.busy !== active.id) return { name: "clarify", m: active };
     if (active.status === "clarifying") return { name: "wait", m: active, text: t.translating, step: 2 };
     if (active.status === "confirmed") return { name: "confirm", m: active };
@@ -199,7 +220,10 @@ const screens = {
     const ta = h("textarea", { id: "draft", rows: 2, placeholder: ph, "aria-label": ph,
       oninput: (e) => { S.draft = e.target.value; nextBtn.disabled = !S.draft.trim(); } });
     ta.value = S.draft;
-    const nextBtn = h("button", { onclick: say, disabled: !S.draft.trim() || S.busy === "say" }, t.next);
+    // 送信は1回だけ（音声の文字は入力欄に入るだけで、送るのはこのボタン）
+    const nextBtn = h("button", { onclick: say, disabled: !S.draft.trim() || S.busy === "say" }, t.send);
+    const clearBtn = S.draft && h("button", { class: "p-clear", "aria-label": t.clear, title: t.clear,
+      onclick: () => { S.draft = ""; render(true); } }, icon("x"));
     const rec = S.mic === "recording";
     const n = memoItems().length;
     return h("section", { class: "p-screen" },
@@ -210,6 +234,10 @@ const screens = {
         v.doctors.map((d, i) => doctorCard(d, i < v.doctors.length - 1 && d !== v.openQ, d === v.openQ)),
         v.lastSent && h("div", { class: "p-status" },
           icon(v.lastSent.status === "received" ? "check-check" : "check"), v.lastSent.status === "received" ? t.read : t.sent),
+        // 送った後に、医師に届いた内容を自分の言語で見られる（承認はもう求めない）。違っていたら言い直す
+        v.lastSent?.translation?.back_translation && !v.lastSent.replyTo && h("div", { class: "p-sent-read" },
+          `${t.doctorRead}: “${v.lastSent.translation.back_translation}”`,
+          h("button", { class: "btn-link", onclick: () => { S.draft = v.lastSent.original; render(true); } }, t.sayAgain)),
         v.answeredQ && h("div", { class: "p-answered" }, `${t.yourAnswer}: ${v.lastSent.original}`,
           h("button", { class: "btn-link", onclick: () => { S.reopen = v.answeredQ.id; render(true); } }, t.change))),
       h("div", { class: "p-spacer" }),
@@ -218,7 +246,53 @@ const screens = {
           disabled: S.mic === "transcribing", onclick: () => mic.toggle(), html: rec ? STOP_SVG : MIC_SVG }),
         h("div", { class: "hint", "aria-live": "polite" }, rec ? t.listening : S.mic === "transcribing" ? t.converting
           : v.openQ?.kind === "teachback" ? t.tbHint : v.openQ ? t.answerHint : t.hint),
-        h("div", { class: "p-input" }, ta, nextBtn)));
+        h("div", { class: "p-input" }, ta, clearBtn, nextBtn)));
+  },
+
+  // Translation Intent Clarification: 自分の発言の意味を選ぶ・自分の言葉で説明する・言い直す
+  intent: ({ m }) => {
+    const it = m.gate.intent;
+    const own = S.freeText || !it.interpretations?.length;
+    const body = own
+      ? (() => {
+          const ta = h("textarea", { rows: 3, "aria-label": t.intentOwnPlaceholder, placeholder: t.intentOwnPlaceholder,
+            autofocus: true, oninput: (e) => (okBtn.disabled = !e.target.value.trim()) });
+          const okBtn = h("button", { class: "btn-primary", disabled: true,
+            onclick: () => chooseIntent(m, "free_text", ta.value.trim()) }, t.send);
+          return h("div", { class: "p-free" }, ta, okBtn,
+            it.interpretations?.length > 0 && h("button", { class: "btn-link btn-icon",
+              onclick: () => { S.freeText = false; render(true); } }, icon("arrow-left"), t.back));
+        })()
+      : h("div", { class: "p-options" }, it.interpretations.map((i) =>
+          h("button", { class: "p-option", onclick: () => chooseIntent(m, i.id) }, i.meaning_speaker)));
+    return h("section", { class: "p-screen" },
+      top(2),
+      h("div", { class: "p-body" },
+        h("div", { class: "p-said" }, m.original),
+        h("h1", { class: "p-question" }, it.question_speaker || t.intentQ),
+        body),
+      h("div", { class: "p-spacer" }),
+      h("div", { class: "p-links" },
+        !own && h("button", { class: "btn-link", onclick: () => { S.freeText = true; render(true); } }, t.intentOwn),
+        h("button", { class: "btn-link", onclick: () => chooseIntent(m, "none") }, t.intentNone)));
+  },
+
+  // 訳の照合で相違が残ったとき（訳し直しても）。言い直すか、「未検証」と分かる形で送るかを本人が決める
+  review: ({ m }) => {
+    const g = m.gate;
+    const notes = (g.verification?.issues ?? []).map((i) => i.detail_speaker).filter(Boolean).slice(0, 3);
+    return h("section", { class: "p-screen" },
+      top(3),
+      h("div", { class: "p-body" },
+        h("div", { class: "p-said" }, m.original),
+        h("h1", { class: "p-question" }, t.reviewTitle),
+        notes.length > 0 && h("ul", { class: "p-review-issues" }, notes.map((n) => h("li", {}, n))),
+        g.draft?.back_translation && [h("div", { class: "p-label" }, t.reviewDoctorReads),
+          h("div", { class: "p-big" }, `“${g.draft.back_translation}”`)]),
+      h("div", { class: "p-spacer" }),
+      h("div", { class: "p-actions" },
+        h("button", { class: "btn-primary", disabled: S.busy === m.id, onclick: () => reviewAct(m, "rephrase") }, t.rephrase),
+        h("button", { class: "btn-link", disabled: S.busy === m.id, onclick: () => reviewAct(m, "send_unverified") }, t.sendAnyway)));
   },
 
   wait: (v) => h("section", { class: "p-screen" },
@@ -284,6 +358,7 @@ function doctorCard(d, old, open) {
     h("div", { class: "who" }, who, listen),
     exp && h("div", { class: "p-explain" }, exp.translation?.text ?? ""),
     h("div", { class: "say" }, d.translation?.text ?? ""),
+    d.gate?.override === "speaker_ack" && h("div", { class: "p-unverified" }, t.unverifiedFromDoctor),
     open && c && c.options?.length > 0 && h("div", { class: "p-options" }, c.options.map((o, i) =>
       h("button", { class: "p-option", disabled: busy, onclick: () => answerQ(d, "option", o, i) }, o))),
     open && c && h("div", { class: "p-links" },
@@ -359,7 +434,8 @@ async function say() {
   S.busy = "say"; S.reopen = null; render(true);
   try {
     // 吹き出しは addDoc の時点で onSnapshot に出る。翻訳も onSnapshot の方が先に届く
-    const p = q ? unsaid.reply(sid, q.id, text, "free_text") : unsaid.say(sid, "patient", text);
+    const created = () => { if (S.busy === "say") { S.busy = null; render(true); } }; // 発言ができたら次の操作をできるようにする
+    const p = q ? unsaid.reply(sid, q.id, text, "free_text", undefined, created) : unsaid.say(sid, "patient", text, null, created);
     S.draft = "";
     await p;
   } catch (e) {
@@ -368,19 +444,40 @@ async function say() {
     fail(e);
     return;
   }
-  S.busy = null; render();
+  if (S.busy === "say") S.busy = null;
+  render();
 }
 
 // 医師の確認質問に選択肢・「分からない」・「どれでもない」で答える（訳はもうあるので、そのまま医師に届く）
 async function answerQ(q, type, text, index) {
   if (S.busy) return;
   S.busy = `q:${q.id}`; S.reopen = null; render(true);
-  try { await unsaid.reply(sid, q.id, text ?? "", type, index); } catch (e) {
+  const created = () => { if (S.busy === `q:${q.id}`) { S.busy = null; render(true); } };
+  try { await unsaid.reply(sid, q.id, text ?? "", type, index, created); } catch (e) {
     if (e.messageId) watch.fail(e.messageId);
     fail(e);
     return;
   }
   S.busy = null; render();
+}
+
+// 自分の発言の意味を選んだ（"i1" など）・説明した（"free_text"）・どれでもない（"none" → 入力欄に戻して言い直す）
+async function chooseIntent(m, choice, text = "") {
+  S.busy = m.id; S.freeText = false; render(true);
+  try {
+    const r = await unsaid.chooseIntent(sid, m.id, choice, text);
+    if (choice === "none") S.draft = r?.original ?? m.original;
+  } catch (e) { fail(e); return; }
+  S.busy = null; render(true);
+}
+
+async function reviewAct(m, action) {
+  S.busy = m.id; render(true);
+  try {
+    const r = await unsaid.reviewMessage(sid, m.id, action);
+    if (action === "rephrase") S.draft = r?.original ?? m.original;
+  } catch (e) { fail(e); return; }
+  S.busy = null; render(true);
 }
 
 async function answer(m, type, text = "") {
@@ -408,6 +505,7 @@ async function retry(m) {
 
 // 「違う」: この発言は送らずに、話す画面へ戻す（文字は入力欄に戻して直せるようにする）
 function notRight(m) {
+  if (m.gate) unsaid.cancelMessage(sid, m.id).catch(() => {}); // サーバーでも取り消す（後から解析が終わっても送らない）
   S.dismissed.add(m.id);
   save("dismissed", [...S.dismissed]);
   S.draft = m.original;

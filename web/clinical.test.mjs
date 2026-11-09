@@ -1,7 +1,7 @@
 // web/clinical.js のテスト（node --test web/）。サーバーが書く形の発言を手で作って確かめる。
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { clinicalMemo, candidates, karteText, factText, factsOf, teachbacks } from "./clinical.js";
+import { clinicalMemo, candidates, karteText, factText, factsOf, teachbacks, activeIssues, verificationOf } from "./clinical.js";
 
 const fact = (id, category, meaning, quote, extra = {}) => ({
   fact_id: id, category, normalized_meaning: meaning, source_quote: quote, polarity: "present",
@@ -95,4 +95,29 @@ test("カルテ: 確認した内容と理解の確認", () => {
 
 test("何も無ければカルテは空", () => {
   assert.equal(karteText([], { patientLang: "en" }), "");
+});
+
+test("未解決事項: 医師が閉じたものは出さず、保留は分ける", () => {
+  const audit = { issues: [
+    { issue_id: "u1", type: "instruction_misunderstanding", description: "朝に2錠と理解", status: "OPEN", held: false, severity: "high" },
+    { issue_id: "u2", type: "contradiction", description: "アレルギー", status: "ANSWERED", held: true, severity: "medium" },
+    { issue_id: "u3", type: "contradiction", description: "解決した事項ZZ", status: "RESOLVED", held: false },
+    { issue_id: "u4", type: "unanswered_question", description: "無視した事項YY", status: "DISMISSED", held: false },
+  ] };
+  const a = activeIssues(audit);
+  assert.deepEqual(a.open.map((i) => i.issue_id), ["u1"]);
+  assert.deepEqual(a.held.map((i) => i.issue_id), ["u2"]);
+  const text = karteText([A], { patientLang: "zh-CN" }, new Date(), audit);
+  assert.match(text, /指示の理解の相違：朝に2錠と理解/);
+  assert.match(text, /前の発言との矛盾：アレルギー（保留）（回答あり）/);
+  assert.doesNotMatch(text, /解決した事項ZZ|無視した事項YY/);
+});
+
+test("訳の検証の表示: 未検証で送った訳ははっきり分ける", () => {
+  assert.equal(verificationOf({ gate: { verification: { status: "VERIFIED" } } }).level, "ok");
+  assert.equal(verificationOf({ gate: { verification: { status: "MISMATCH" }, override: "speaker_ack" } }).label, "訳は未検証");
+  assert.equal(verificationOf({ gate: { verification: { status: "PRETRANSLATED" } } }), null);
+  const B = structuredClone(A);
+  B.gate = { override: "speaker_ack", verification: { status: "MISMATCH" } };
+  assert.match(karteText([B], { patientLang: "zh-CN" }), /めまい［未］［訳未検証］/);
 });
