@@ -1,21 +1,21 @@
 {
  "meta": {
-  "started": "2026-11-10 04:25 JST",
+  "started": "2026-11-10 05:33 JST",
   "model": "gemini-3.8-flash",
   "project": "kumu-devfest-2026",
   "location": "global",
   "checks": 15,
-  "ok": 14
+  "ok": 15
  },
  "results": [
   {
    "check": "医師→患者の翻訳",
    "expect": "検証済みで届く・数（2回・1錠）と時間帯（朝・夜）が残る",
-   "ok": false,
-   "summary": "sent VERIFIED 「这个药请每天吃2次，早晚各吃1片。」",
-   "ms": 12176,
+   "ok": true,
+   "summary": "sent VERIFIED 「这个药请每天吃两次，早晚各吃一片。」",
+   "ms": 14467,
    "status": "sent",
-   "translation": "这个药请每天吃2次，早晚各吃1片。",
+   "translation": "这个药请每天吃两次，早晚各吃一片。",
    "intent": "RESOLVED",
    "decided_by": "ai",
    "interpretations": [],
@@ -65,7 +65,7 @@
     "evidence": [
      {
       "element": "entity",
-      "quote": "薬"
+      "quote": "この薬"
      },
      {
       "element": "frequency",
@@ -89,7 +89,7 @@
      },
      {
       "element": "modality",
-      "quote": "飲んでください"
+      "quote": "ください"
      }
     ],
     "evidence_dropped": 0
@@ -100,7 +100,7 @@
    "expect": "検証済みで届く・38.5度・咳なし（否定）・昨夜から",
    "ok": true,
    "summary": "sent VERIFIED 「昨日の夜から熱が出始めて、38度5分あり、咳はありません。」",
-   "ms": 11848,
+   "ms": 9853,
    "status": "sent",
    "translation": "昨日の夜から熱が出始めて、38度5分あり、咳はありません。",
    "intent": "RESOLVED",
@@ -114,7 +114,7 @@
     "modality": "none",
     "certainty": "certain",
     "actor": "speaker",
-    "action": "have fever",
+    "action": "have symptom",
     "object": "",
     "negated": [
      "cough"
@@ -133,7 +133,7 @@
      {
       "value": 38.5,
       "unit": "celsius",
-      "of": "body temperature"
+      "of": "fever"
      }
     ],
     "frequency": [],
@@ -152,7 +152,11 @@
     "evidence": [
      {
       "element": "time",
-      "quote": "昨天晚上"
+      "quote": "昨天"
+     },
+     {
+      "element": "time",
+      "quote": "晚上"
      },
      {
       "element": "entity",
@@ -178,23 +182,34 @@
    "check": "「大丈夫です」: 文脈で決まる（併用してよいか → 大丈夫）",
    "expect": "聞かずに「一緒に飲んでよい」の意味で訳す（RESOLVED）",
    "ok": true,
-   "summary": "RESOLVED sent 「可以的，没问题。」",
-   "ms": 7213,
+   "summary": "RESOLVED sent 「没问题。」",
+   "ms": 13867,
    "status": "sent",
-   "translation": "可以的，没问题。",
+   "translation": "没问题。",
    "intent": "RESOLVED",
    "decided_by": "ai",
    "interpretations": [],
    "verification": "VERIFIED",
-   "issues": [],
+   "issues": [
+    [
+     "polarity_flip",
+     "medium",
+     "否定の表現が片方にしかない（言い方の違いのこともある）"
+    ],
+    [
+     "polarity_flip",
+     "medium",
+     "肯定・否定が違う（原文 肯定 / 訳文 否定）"
+    ]
+   ],
    "frame": {
     "speech_act": "answer",
     "polarity": "affirmative",
     "modality": "may",
     "certainty": "certain",
-    "actor": "unspecified",
+    "actor": "addressee",
     "action": "take medicine together",
-    "object": "",
+    "object": "medicine",
     "negated": [],
     "times": [],
     "quantities": [],
@@ -215,16 +230,16 @@
    "check": "「大丈夫です」: 文脈なし（意味が決まらない）",
    "expect": "訳を送らず、医師本人に意味を確認する（CLARIFICATION_REQUIRED）",
    "ok": true,
-   "summary": "CLARIFICATION_REQUIRED awaiting_intent 候補 ['問題ありません（異常なし・心配ありません）', '結構です（不要です・必要ありません）', '構いません（続けてください・大丈夫です）']",
-   "ms": 4238,
+   "summary": "CLARIFICATION_REQUIRED awaiting_intent 候補 ['問題ありません・心配いりません', '結構です（必要ありません）', '構いません（了解・同意します）']",
+   "ms": 14343,
    "status": "awaiting_intent",
    "translation": "",
    "intent": "CLARIFICATION_REQUIRED",
    "decided_by": "ai",
    "interpretations": [
-    "問題ありません（異常なし・心配ありません）",
-    "結構です（不要です・必要ありません）",
-    "構いません（続けてください・大丈夫です）"
+    "問題ありません・心配いりません",
+    "結構です（必要ありません）",
+    "構いません（了解・同意します）"
    ],
    "verification": null,
    "issues": [],
@@ -243,7 +258,7 @@
     "conditions": [],
     "medical_entities": [],
     "unresolved_slots": [
-     "referent"
+     "meaning"
     ],
     "evidence": [
      {
@@ -259,7 +274,7 @@
    "expect": "本人に聞き、選んだ意味（断る）で訳して届く（USER_CONFIRMED）",
    "ok": true,
    "summary": "選んだ「不需要打止痛针」→ 訳「大丈夫です（注射は結構です）。」VERIFIED",
-   "ms": 5722,
+   "ms": 4646,
    "before": {
     "status": "awaiting_intent",
     "translation": "",
@@ -267,19 +282,19 @@
     "decided_by": "ai",
     "interpretations": [
      "不需要打止痛针",
-     "可以打止痛针（同意）",
-     "痛感不要紧，不用担心"
+     "可以打止痛针，没关系",
+     "现在不怎么痛，不用了"
     ],
     "verification": null,
     "issues": [],
     "frame": {
-     "speech_act": "answer",
-     "polarity": "affirmative",
+     "speech_act": "other",
+     "polarity": "none",
      "modality": "none",
      "certainty": "certain",
-     "actor": "speaker",
-     "action": "be fine",
-     "object": "",
+     "actor": "unspecified",
+     "action": "unspecified",
+     "object": "painkiller injection",
      "negated": [],
      "times": [],
      "quantities": [],
@@ -287,7 +302,7 @@
      "conditions": [],
      "medical_entities": [],
      "unresolved_slots": [
-      "acceptance_or_refusal_of_injection"
+      "acceptance_or_refusal"
      ],
      "evidence": [],
      "evidence_dropped": 0
@@ -296,7 +311,7 @@
    "chosen": {
     "id": "i1",
     "meaning_speaker": "不需要打止痛针",
-    "meaning_listener": "痛み止めの注射は必要ありません（断ります）。",
+    "meaning_listener": "痛み止めの注射は不要です（断る）",
     "speech_act": "refuse"
    },
    "after": {
@@ -306,19 +321,19 @@
     "decided_by": "speaker",
     "interpretations": [
      "不需要打止痛针",
-     "可以打止痛针（同意）",
-     "痛感不要紧，不用担心"
+     "可以打止痛针，没关系",
+     "现在不怎么痛，不用了"
     ],
     "verification": "VERIFIED",
     "issues": [],
     "frame": {
-     "speech_act": "answer",
-     "polarity": "affirmative",
+     "speech_act": "other",
+     "polarity": "none",
      "modality": "none",
      "certainty": "certain",
-     "actor": "speaker",
-     "action": "be fine",
-     "object": "",
+     "actor": "unspecified",
+     "action": "unspecified",
+     "object": "painkiller injection",
      "negated": [],
      "times": [],
      "quantities": [],
@@ -326,30 +341,30 @@
      "conditions": [],
      "medical_entities": [],
      "unresolved_slots": [
-      "acceptance_or_refusal_of_injection"
+      "acceptance_or_refusal"
      ],
      "evidence": [],
      "evidence_dropped": 0
     }
    },
-   "ms_after_choice": 6747
+   "ms_after_choice": 11734
   },
   {
    "check": "Semantic Bridge の意味の枠",
    "expect": "禁止（must_not）・時刻 08:00・明日（day+1）を取り出す",
    "ok": true,
    "summary": "modality=must_not polarity=mixed times=[{'kind': 'relative_day', 'value': 'day+1'}, {'kind': 'part_of_day', 'value': 'morning'}, {'kind': 'clock', 'value': '08:00'}]",
-   "ms": 8745,
+   "ms": 17592,
    "frame": {
     "speech_act": "instruction",
     "polarity": "mixed",
     "modality": "must_not",
     "certainty": "certain",
     "actor": "addressee",
-    "action": "fast",
+    "action": "eat",
     "object": "food",
     "negated": [
-     "eat food"
+     "eat"
     ],
     "times": [
      {
@@ -368,7 +383,7 @@
     "quantities": [],
     "frequency": [],
     "conditions": [
-     "until 08:00 tomorrow morning"
+     "until 8 am tomorrow"
     ],
     "medical_entities": [],
     "unresolved_slots": [],
@@ -379,15 +394,11 @@
      },
      {
       "element": "time",
-      "quote": "朝"
-     },
-     {
-      "element": "time",
-      "quote": "8時"
+      "quote": "朝8時"
      },
      {
       "element": "condition",
-      "quote": "までは"
+      "quote": "明日の朝8時までは"
      },
      {
       "element": "negation",
@@ -395,11 +406,11 @@
      },
      {
       "element": "action",
-      "quote": "食べないでください"
+      "quote": "食べないで"
      },
      {
-      "element": "action",
-      "quote": "飲んでもかまいません"
+      "element": "modality",
+      "quote": "ないでください"
      }
     ],
     "evidence_dropped": 0
@@ -412,7 +423,7 @@
    "expect": "MISMATCH にする",
    "ok": true,
    "summary": "MISMATCH [('quantity_change', 'strong'), ('addition', 'strong'), ('frequency_change', 'strong'), ('frequency_change', 'strong')]",
-   "ms": 3692,
+   "ms": 4066,
    "verification": {
     "status": "MISMATCH",
     "issues": [
@@ -440,12 +451,12 @@
       "layer": "llm",
       "source_quote": "1日2回",
       "translation_quote": "一天吃三次",
-      "detail": "服薬回数が1日2回から1日3回に誤って翻訳されています。",
-      "detail_speaker": "服薬回数が1日2回から1日3回に誤って翻訳されています。"
+      "detail": "服薬頻度が1日2回から1日3回に誤って翻訳されています。",
+      "detail_speaker": "服薬頻度が1日2回から1日3回に誤って翻訳されています。"
      }
     ],
     "failures": [],
-    "at": "2026-11-09T19:27:11.857+00:00",
+    "at": "2026-11-09T20:35:48.821+00:00",
     "translation_frame": {
      "speech_act": "instruction",
      "polarity": "affirmative",
@@ -512,7 +523,7 @@
       },
       {
        "element": "quantity",
-       "quote": "一片"
+       "quote": "各吃一片"
       }
      ],
      "evidence_dropped": 0
@@ -524,7 +535,7 @@
    "expect": "MISMATCH にする",
    "ok": true,
    "summary": "MISMATCH [('polarity_flip', 'medium'), ('polarity_flip', 'strong'), ('frequency_change', 'strong'), ('polarity_flip', 'strong')]",
-   "ms": 3674,
+   "ms": 3227,
    "verification": {
     "status": "MISMATCH",
     "issues": [
@@ -552,19 +563,19 @@
       "layer": "llm",
       "source_quote": "飲んでください",
       "translation_quote": "不要一天吃两次",
-      "detail": "「1日2回飲んでください」という指示が、翻訳では「1日2回飲まないでください」と否定文になっています。",
-      "detail_speaker": "「1日2回飲んでください」という指示が、翻訳では「1日2回飲まないでください」と否定文になっています。"
+      "detail": "「1日2回飲んでください」という指示が、翻訳では「1日2回服用しないでください」と否定文に変わっています。",
+      "detail_speaker": "「1日2回飲んでください」という指示が、翻訳では「1日2回服用しないでください」と否定文に変わっています。"
      }
     ],
     "failures": [],
-    "at": "2026-11-09T19:27:15.531+00:00",
+    "at": "2026-11-09T20:35:52.049+00:00",
     "translation_frame": {
      "speech_act": "instruction",
      "polarity": "mixed",
      "modality": "must_not",
      "certainty": "certain",
      "actor": "addressee",
-     "action": "take medicine",
+     "action": "take medicine twice a day",
      "object": "medicine",
      "negated": [
       "take twice a day"
@@ -605,12 +616,8 @@
        "quote": "不要一天吃两次"
       },
       {
-       "element": "action",
-       "quote": "吃"
-      },
-      {
        "element": "entity",
-       "quote": "这个药"
+       "quote": "药"
       },
       {
        "element": "time",
@@ -634,7 +641,7 @@
    "expect": "MISMATCH にする",
    "ok": true,
    "summary": "MISMATCH [('time_change', 'strong'), ('omission', 'strong')]",
-   "ms": 3317,
+   "ms": 13372,
    "verification": {
     "status": "MISMATCH",
     "issues": [
@@ -650,12 +657,12 @@
       "layer": "llm",
       "source_quote": "朝と夜に1錠ずつ",
       "translation_quote": "早上吃一片",
-      "detail": "「夜に1錠」飲むという指示が訳から抜け落ちています。",
-      "detail_speaker": "「夜に1錠」飲むという指示が訳から抜け落ちています。"
+      "detail": "夜にも1錠服用するという指示が翻訳から脱落しています。",
+      "detail_speaker": "夜にも1錠服用するという指示が翻訳から脱落しています。"
      }
     ],
     "failures": [],
-    "at": "2026-11-09T19:27:18.848+00:00",
+    "at": "2026-11-09T20:36:05.421+00:00",
     "translation_frame": {
      "speech_act": "instruction",
      "polarity": "affirmative",
@@ -692,9 +699,7 @@
        "presence": "present"
       }
      ],
-     "unresolved_slots": [
-      "evening dose"
-     ],
+     "unresolved_slots": [],
      "evidence": [
       {
        "element": "action",
@@ -702,7 +707,7 @@
       },
       {
        "element": "entity",
-       "quote": "这个药"
+       "quote": "药"
       },
       {
        "element": "frequency",
@@ -726,12 +731,12 @@
    "expect": "正しい訳は通す",
    "ok": true,
    "summary": "VERIFIED []",
-   "ms": 3711,
+   "ms": 4105,
    "verification": {
     "status": "VERIFIED",
     "issues": [],
     "failures": [],
-    "at": "2026-11-09T19:27:22.558+00:00",
+    "at": "2026-11-09T20:36:09.525+00:00",
     "translation_frame": {
      "speech_act": "instruction",
      "polarity": "affirmative",
@@ -807,8 +812,8 @@
    "check": "Safety Gate: 数が落ちた訳は自動で送らない",
    "expect": "needs_review（発言者の確認）・訳は届かない",
    "ok": true,
-   "summary": "needs_review MISMATCH [('quantity_change', 'strong', '原文の数「8」が訳文に無い'), ('time_change', 'strong', '期間が違う（原文 8時間 / 訳文 なし）'), ('omission', 'strong', '「8時間」という絶食期間の指定が翻訳で抜け落ちています。')]",
-   "ms": 12008,
+   "summary": "needs_review MISMATCH [('quantity_change', 'strong', '原文の数「8」が訳文に無い'), ('time_change', 'strong', '期間が違う（原文 8時間 / 訳文 なし）'), ('time_change', 'strong', '「8時間」という絶食時間の指定が訳から抜け落ちています。')]",
+   "ms": 12258,
    "status": "needs_review",
    "translation": "",
    "intent": "RESOLVED",
@@ -827,9 +832,9 @@
      "期間が違う（原文 8時間 / 訳文 なし）"
     ],
     [
-     "omission",
+     "time_change",
      "strong",
-     "「8時間」という絶食期間の指定が翻訳で抜け落ちています。"
+     "「8時間」という絶食時間の指定が訳から抜け落ちています。"
     ]
    ],
    "frame": {
@@ -853,31 +858,27 @@
      {
       "value": 8.0,
       "unit": "hour",
-      "of": "fasting duration"
+      "of": "duration"
      }
     ],
     "frequency": [],
     "conditions": [
-     "before test"
+     "before examination"
     ],
     "medical_entities": [
      {
-      "concept": "test",
+      "concept": "examination",
       "presence": "present"
      }
     ],
     "unresolved_slots": [],
     "evidence": [
      {
-      "element": "action",
-      "quote": "食べないでください"
-     },
-     {
-      "element": "negation",
+      "element": "modality",
       "quote": "ないでください"
      },
      {
-      "element": "modality",
+      "element": "negation",
       "quote": "ないでください"
      },
      {
@@ -895,6 +896,10 @@
      {
       "element": "entity",
       "quote": "検査"
+     },
+     {
+      "element": "action",
+      "quote": "食べ"
      }
     ],
     "evidence_dropped": 0
@@ -905,19 +910,19 @@
    "expect": "理解の相違を未解決事項に 1 件出す（根拠の発言つき）",
    "ok": true,
    "summary": "[('instruction_misunderstanding', '説明と患者の理解が違う可能性: 量: 説明 1錠 / 理解 2錠／時間帯: 説明は 朝・夕・夜、理解は 朝 だけ')]",
-   "ms": 11179,
+   "ms": 15445,
    "issues": [
     {
      "issue_id": "u1",
      "type": "instruction_misunderstanding",
      "description": "説明と患者の理解が違う可能性: 量: 説明 1錠 / 理解 2錠／時間帯: 説明は 朝・夕・夜、理解は 朝 だけ",
      "related_utterances": [
-      "c829125f108f4cfcac5c",
-      "b35e236d7621433dbd4f"
+      "17ef4ea4e5a54c5797b6",
+      "d304b97e2494467e8078"
      ],
      "evidence": [
       {
-       "utterance_id": "b35e236d7621433dbd4f",
+       "utterance_id": "d304b97e2494467e8078",
        "field": "original",
        "quote": "早上吃两片就可以了，对吗？"
       }
@@ -928,10 +933,10 @@
      "suggested_question": "",
      "source": "rule",
      "resolution": "",
-     "last_updated": "2026-11-09T19:27:55.011+00:00",
+     "last_updated": "2026-11-09T20:36:57.609+00:00",
      "history": [
       {
-       "at": "2026-11-09T19:27:55.011+00:00",
+       "at": "2026-11-09T20:36:57.609+00:00",
        "by": "rule",
        "event": "opened",
        "to": "OPEN"
@@ -950,7 +955,7 @@
     "frame": {
      "speech_act": "confirm_understanding",
      "polarity": "affirmative",
-     "modality": "can",
+     "modality": "may",
      "certainty": "uncertain",
      "actor": "speaker",
      "action": "take medicine",
@@ -971,7 +976,12 @@
      ],
      "frequency": [],
      "conditions": [],
-     "medical_entities": [],
+     "medical_entities": [
+      {
+       "concept": "medicine",
+       "presence": "present"
+      }
+     ],
      "unresolved_slots": [],
      "evidence": [
       {
@@ -985,6 +995,10 @@
       {
        "element": "quantity",
        "quote": "两片"
+      },
+      {
+       "element": "modality",
+       "quote": "可以"
       }
      ],
      "evidence_dropped": 0
@@ -996,56 +1010,63 @@
    "expect": "理解の相違を出さない",
    "ok": true,
    "summary": "[]",
-   "ms": 12738,
+   "ms": 13840,
    "issues": []
   },
   {
    "check": "Teach-back: 食い違い",
    "expect": "inconsistent（認識の相違）",
    "ok": true,
-   "summary": "inconsistent ['明日また来ればよいかと思っている']",
-   "ms": 7674,
+   "summary": "inconsistent ['明日また来ればよいのかと理解している']",
+   "ms": 14269,
    "result": {
     "overall": "inconsistent",
     "points": [
      {
-      "doctor_point": "今日は帰らず、検査結果が出るまで院内で待つこと",
-      "patient_understanding": "明日また来ればよいかと思っている",
+      "doctor_point": "今日は検査結果が出るまで帰らずに待つこと",
+      "patient_understanding": "明日また来ればよいのかと理解している",
       "verdict": "mismatch",
-      "explanation": "説明は「今日結果が出るまで帰らずに待つ」ですが、患者は「明日また来る」と理解しています。",
+      "explanation": "説明は「今日結果が出るまで帰らず待つ」ですが、患者は「明日また来ればいいのか」と帰宅を想定しています。",
       "restatement_quote": "明天再来就可以了，是吗？"
      }
     ],
-    "suggested_reexplanation": "今日は帰らずに、検査の結果が出るまでここで待ってください。明日ではなく、今日お伝えします。",
+    "suggested_reexplanation": "今日は帰らずに、検査の結果が出るまでここで待ってください。明日ではなく、今日結果が出ます。",
     "rejected": 0,
     "decided_by": "ai",
-    "at": "2026-11-09T19:28:33+00:00"
+    "at": "2026-11-09T20:37:42+00:00"
    },
-   "translation": "明日また来ればいい、ということでしょうか？"
+   "translation": "明日また来ればいいということでしょうか？"
   },
   {
    "check": "Teach-back: 正しい理解",
    "expect": "consistent",
    "ok": true,
-   "summary": "consistent ['今日は家に帰らず、病院で検査結果が出るのを待つ']",
-   "ms": 10212,
+   "summary": "consistent ['今日は家に帰らずに病院で待つ', '検査の結果が出るまで待つ']",
+   "ms": 14855,
    "result": {
     "overall": "consistent",
     "points": [
      {
-      "doctor_point": "今日は検査結果が出るまで帰らずに待つこと",
-      "patient_understanding": "今日は家に帰らず、病院で検査結果が出るのを待つ",
+      "doctor_point": "今日は帰らずに待つこと",
+      "patient_understanding": "今日は家に帰らずに病院で待つ",
       "verdict": "match",
-      "explanation": "患者は今日帰らずに検査結果が出るまで待つことを正確に理解しています。",
-      "restatement_quote": "今天不回家，在医院等检查结果出来。"
+      "explanation": "今日は帰らずに病院で待つという指示を正しく理解しています。",
+      "restatement_quote": "今天不回家，在医院等"
+     },
+     {
+      "doctor_point": "検査の結果が出るまで待つこと",
+      "patient_understanding": "検査の結果が出るまで待つ",
+      "verdict": "match",
+      "explanation": "検査結果が出るまで待つという条件を正しく理解しています。",
+      "restatement_quote": "等检查结果出来"
      }
     ],
     "suggested_reexplanation": "",
     "rejected": 0,
     "decided_by": "ai",
-    "at": "2026-11-09T19:28:51+00:00"
+    "at": "2026-11-09T20:38:06+00:00"
    },
-   "translation": "今日は帰宅せず、検査結果が出るまで病院で待つということですね。"
+   "translation": "今日は帰宅せず、病院で検査結果が出るのを待つということですね。"
   }
  ]
 }

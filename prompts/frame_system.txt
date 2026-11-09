@@ -18,7 +18,8 @@ Fill only what the text itself says. Unknown stays unknown: "none", "unknown", "
 - modality: none | must | must_not | should | should_not | may | can | cannot | want | unknown.
   If the text has several clauses with different modalities (e.g. "You may shower, but do not get the wound wet"),
   use the most restrictive one, in this order: must_not > cannot > should_not > must > should > may > can > want.
-  A prohibition is the part that must not be lost. Put the prohibited action in negated as well.
+  A prohibition is the part that must not be lost. Put the prohibited action in negated as well. When you choose
+  the prohibition, action is the prohibited action (for "Do not leave; wait here": modality must_not, action "leave").
 - certainty: certain | uncertain (the speaker hedges: "I think", "maybe", "not sure") | unknown.
 - actor: who does the action relative to the speaker: speaker | addressee | both | third_party | unspecified.
 - action, object: a short lowercase English concept (e.g. "wait", "go home", "take medicine"; "test results"). Labels only, not a translation.

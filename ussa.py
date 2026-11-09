@@ -407,6 +407,16 @@ def _prohibited(f):
     return out
 
 
+def _has_prohibition(f):
+    """禁止を含む指示か: 様相が禁止、または指示・依頼で否定された行為がある（「帰らずに待って」= 待つ＋帰るを否定）。"""
+    return f["modality"] in _PROHIBIT or (f["speech_act"] in ("instruction", "request") and bool(f.get("negated")))
+
+
+def _requires(f):
+    """枠が求めている行為（禁止でない指示の主な行為）。"""
+    return {_norm(f["action"])} if f.get("action") and f["modality"] in ("must", "should") else set()
+
+
 def _overlap(xs, ys):
     return any(x == y or (len(x) >= 3 and len(y) >= 3 and (x in y or y in x)) for x in xs for y in ys)
 
@@ -423,14 +433,19 @@ def compare_frames(a, b):
     if {a["polarity"], b["polarity"]} == {"affirmative", "negative"}:
         add("polarity_flip", "strong" if same_action else "medium", f"肯定・否定が違う（原文 {_ja(a['polarity'])} / 訳文 {_ja(b['polarity'])}）")
     pa, pb = _prohibited(a), _prohibited(b)
-    if (a["modality"] in _PROHIBIT) != (b["modality"] in _PROHIBIT) \
-            and "unknown" not in (a["modality"], b["modality"]) and "none" not in (a["modality"], b["modality"]):
+    ha, hb = _has_prohibition(a), _has_prohibition(b)
+    if ha and hb and _requires(a) & {_norm(b["action"])} and b["modality"] in _PROHIBIT \
+            or ha and hb and _requires(b) & {_norm(a["action"])} and a["modality"] in _PROHIBIT:
+        # 同じ行為を、片方は求め、片方は禁止している（「待って」→「待たないで」）
+        add("polarity_flip", "strong", f"同じ行為（{a['action'] or b['action']}）を、片方は求め、片方は禁止している")
+    elif ha != hb and "unknown" not in (a["modality"], b["modality"]) \
+            and not (a["modality"] == "none" and not ha) and not (b["modality"] == "none" and not hb):
         # 同じ行為を両方が禁止・否定している（「帰らずに待って」= 待つ＋帰るを否定 / 「帰らないで」= 帰るを禁止）なら、
         # 表し方の違い。強い証拠にしない（本物の Gemini での比較評価で、正しい訳をこれで止めていた。2026-11-10）
         same = _overlap(pa, pb)
         add("polarity_flip", "medium" if same else "strong",
             f"禁止・不可が片方だけ（原文 {_ja(a['modality'])} / 訳文 {_ja(b['modality'])}）" + ("。同じ行為を両方が否定" if same else ""))
-    elif a["modality"] in _PROHIBIT and b["modality"] in _PROHIBIT and pa and pb and not _overlap(pa, pb):
+    elif ha and hb and pa and pb and not _overlap(pa, pb):
         add("polarity_flip", "medium", "禁止している行為が違う可能性")
     yes, no = {"consent", "accept"}, {"refuse", "decline"}
     if (a["speech_act"] in yes and b["speech_act"] in no) or (a["speech_act"] in no and b["speech_act"] in yes):

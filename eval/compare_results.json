@@ -1,6 +1,6 @@
 {
  "meta": {
-  "started": "2026-11-10 04:14 JST",
+  "started": "2026-11-10 05:23 JST",
   "model": "gemini-3.8-flash",
   "source_model": "gemini-3.8-flash",
   "verify_model": "gemini-3.8-flash",
@@ -23,31 +23,31 @@
    "id": "ja-help",
    "expect": "resolved",
    "A": {
-    "translation": "I am okay.",
+    "translation": "I am fine. / It's okay.",
     "asked": false,
-    "ms": 2151,
-    "intent_ok": false
+    "ms": 6515,
+    "intent_ok": true
    },
    "B": {
     "translation": "No, thank you. I'm fine.",
     "asked": false,
-    "ms": 3392,
+    "ms": 2658,
     "intent": "RESOLVED",
     "intent_ok": true
    },
    "C": {
-    "translation": "No, thank you. I'm fine.",
+    "translation": "No, thank you. I am fine.",
     "asked": false,
     "outcome": "sent",
-    "ms": 10156,
+    "ms": 5941,
     "actions": 1,
     "intent_ok": true
    },
    "D": {
-    "translation": "No, thank you. I'm fine.",
+    "translation": "No, thank you. I am fine.",
     "asked": false,
     "outcome": "sent",
-    "ms": 10156,
+    "ms": 5941,
     "actions": 1,
     "intent_ok": true
    }
@@ -58,13 +58,13 @@
    "A": {
     "translation": "I am okay.",
     "asked": false,
-    "ms": 2367,
+    "ms": 1658,
     "intent_ok": false
    },
    "B": {
     "translation": "No, I'm okay.",
     "asked": false,
-    "ms": 3004,
+    "ms": 2225,
     "intent": "RESOLVED",
     "intent_ok": true
    },
@@ -72,7 +72,7 @@
     "translation": "No, I'm okay.",
     "asked": false,
     "outcome": "sent",
-    "ms": 6443,
+    "ms": 7414,
     "actions": 1,
     "intent_ok": true
    },
@@ -80,7 +80,7 @@
     "translation": "No, I'm okay.",
     "asked": false,
     "outcome": "sent",
-    "ms": 6443,
+    "ms": 7414,
     "actions": 1,
     "intent_ok": true
    }
@@ -91,13 +91,13 @@
    "A": {
     "translation": "I am okay.",
     "asked": false,
-    "ms": 1743,
+    "ms": 1209,
     "intent_ok": false
    },
    "B": {
     "translation": "Yes, that is fine.",
     "asked": false,
-    "ms": 3675,
+    "ms": 2370,
     "intent": "RESOLVED",
     "intent_ok": true
    },
@@ -105,7 +105,7 @@
     "translation": "That's fine.",
     "asked": false,
     "outcome": "sent",
-    "ms": 7411,
+    "ms": 5472,
     "actions": 1,
     "intent_ok": true
    },
@@ -113,7 +113,7 @@
     "translation": "That's fine.",
     "asked": false,
     "outcome": "sent",
-    "ms": 7411,
+    "ms": 5472,
     "actions": 1,
     "intent_ok": true
    }
@@ -122,15 +122,15 @@
    "id": "ja-wait",
    "expect": "resolved",
    "A": {
-    "translation": "I am fine.",
+    "translation": "I am okay.",
     "asked": false,
-    "ms": 1577,
+    "ms": 2158,
     "intent_ok": false
    },
    "B": {
-    "translation": "That's quite all right.",
+    "translation": "That's quite alright.",
     "asked": false,
-    "ms": 2281,
+    "ms": 2553,
     "intent": "RESOLVED",
     "intent_ok": false
    },
@@ -138,7 +138,7 @@
     "translation": "That's quite alright.",
     "asked": false,
     "outcome": "sent",
-    "ms": 5239,
+    "ms": 5136,
     "actions": 1,
     "intent_ok": false
    },
@@ -146,7 +146,7 @@
     "translation": "That's quite alright.",
     "asked": false,
     "outcome": "sent",
-    "ms": 5239,
+    "ms": 5136,
     "actions": 1,
     "intent_ok": false
    }
@@ -157,29 +157,29 @@
    "A": {
     "translation": "I am okay.",
     "asked": false,
-    "ms": 1774,
+    "ms": 1330,
     "intent_ok": false
    },
    "B": {
-    "translation": "Yes, I understand. I'm fine.",
+    "translation": "Yes, I understand.",
     "asked": false,
-    "ms": 2577,
+    "ms": 2641,
     "intent": "RESOLVED",
     "intent_ok": true
    },
    "C": {
-    "translation": "Yes, I understand.",
+    "translation": "Yes, I understood. I'm fine.",
     "asked": false,
     "outcome": "sent",
-    "ms": 12051,
+    "ms": 8527,
     "actions": 1,
     "intent_ok": true
    },
    "D": {
-    "translation": "Yes, I understand.",
+    "translation": "Yes, I understood. I'm fine.",
     "asked": false,
     "outcome": "sent",
-    "ms": 12051,
+    "ms": 8527,
     "actions": 1,
     "intent_ok": true
    }
@@ -190,13 +190,13 @@
    "A": {
     "translation": "I am okay.",
     "asked": false,
-    "ms": 2608,
+    "ms": 1654,
     "intent_ok": false
    },
    "B": {
     "translation": "",
     "asked": true,
-    "ms": 3861,
+    "ms": 4786,
     "intent": "CLARIFICATION_REQUIRED",
     "intent_ok": false
    },
@@ -204,7 +204,7 @@
     "translation": "",
     "asked": true,
     "outcome": "asked_intent",
-    "ms": 3433,
+    "ms": 3872,
     "actions": 2,
     "intent_ok": false
    },
@@ -212,7 +212,7 @@
     "translation": "",
     "asked": true,
     "outcome": "asked_intent",
-    "ms": 3433,
+    "ms": 3872,
     "actions": 2,
     "intent_ok": false
    }
@@ -223,13 +223,13 @@
    "A": {
     "translation": "I am okay.",
     "asked": false,
-    "ms": 1828,
+    "ms": 2278,
     "intent_ok": false
    },
    "B": {
     "translation": "",
     "asked": true,
-    "ms": 9446,
+    "ms": 4550,
     "intent": "CLARIFICATION_REQUIRED",
     "intent_ok": false
    },
@@ -237,7 +237,7 @@
     "translation": "",
     "asked": true,
     "outcome": "asked_intent",
-    "ms": 4089,
+    "ms": 4252,
     "actions": 2,
     "intent_ok": false
    },
@@ -245,7 +245,7 @@
     "translation": "",
     "asked": true,
     "outcome": "asked_intent",
-    "ms": 4089,
+    "ms": 4252,
     "actions": 2,
     "intent_ok": false
    }
@@ -256,29 +256,29 @@
    "A": {
     "translation": "大丈夫です、一人でできます。",
     "asked": false,
-    "ms": 1437,
+    "ms": 1551,
     "intent_ok": true
    },
    "B": {
-    "translation": "大丈夫です、一人でできます。",
+    "translation": "大丈夫です、自分でできます。",
     "asked": false,
-    "ms": 4519,
+    "ms": 2716,
     "intent": "RESOLVED",
     "intent_ok": true
    },
    "C": {
-    "translation": "大丈夫です、一人でできます。",
+    "translation": "大丈夫です、自分でできます。",
     "asked": false,
     "outcome": "sent",
-    "ms": 10975,
+    "ms": 4868,
     "actions": 1,
     "intent_ok": true
    },
    "D": {
-    "translation": "大丈夫です、一人でできます。",
+    "translation": "大丈夫です、自分でできます。",
     "asked": false,
     "outcome": "sent",
-    "ms": 10975,
+    "ms": 4868,
     "actions": 1,
     "intent_ok": true
    }
@@ -287,31 +287,31 @@
    "id": "zh-pain",
    "expect": "resolved",
    "A": {
-    "translation": "大丈夫です。",
+    "translation": "大丈夫です（問題ありません）。",
     "asked": false,
-    "ms": 2664,
+    "ms": 1816,
     "intent_ok": true
    },
    "B": {
-    "translation": "痛くはありません。",
+    "translation": "大丈夫です（特に痛みはありません）。",
     "asked": false,
-    "ms": 2611,
+    "ms": 2719,
     "intent": "RESOLVED",
     "intent_ok": true
    },
    "C": {
-    "translation": "大丈夫です。",
+    "translation": "大丈夫です（痛くはありません）。",
     "asked": false,
     "outcome": "sent",
-    "ms": 12045,
+    "ms": 5539,
     "actions": 1,
     "intent_ok": true
    },
    "D": {
-    "translation": "大丈夫です。",
+    "translation": "大丈夫です（痛くはありません）。",
     "asked": false,
     "outcome": "sent",
-    "ms": 12045,
+    "ms": 5539,
     "actions": 1,
     "intent_ok": true
    }
@@ -320,15 +320,15 @@
    "id": "zh-injection",
    "expect": "clarify",
    "A": {
-    "translation": "大丈夫です。",
+    "translation": "大丈夫です。問題ありません。",
     "asked": false,
-    "ms": 1821,
+    "ms": 1587,
     "intent_ok": false
    },
    "B": {
     "translation": "",
     "asked": true,
-    "ms": 6880,
+    "ms": 3415,
     "intent": "CLARIFICATION_REQUIRED",
     "intent_ok": false
    },
@@ -336,7 +336,7 @@
     "translation": "",
     "asked": true,
     "outcome": "asked_intent",
-    "ms": 4743,
+    "ms": 3970,
     "actions": 2,
     "intent_ok": false
    },
@@ -344,7 +344,7 @@
     "translation": "",
     "asked": true,
     "outcome": "asked_intent",
-    "ms": 4743,
+    "ms": 3970,
     "actions": 2,
     "intent_ok": false
    }
@@ -355,13 +355,13 @@
    "A": {
     "translation": "大丈夫です。",
     "asked": false,
-    "ms": 1554,
+    "ms": 2338,
     "intent_ok": false
    },
    "B": {
     "translation": "",
     "asked": true,
-    "ms": 5453,
+    "ms": 4743,
     "intent": "CLARIFICATION_REQUIRED",
     "intent_ok": false
    },
@@ -369,7 +369,7 @@
     "translation": "",
     "asked": true,
     "outcome": "asked_intent",
-    "ms": 4038,
+    "ms": 7787,
     "actions": 2,
     "intent_ok": false
    },
@@ -377,7 +377,7 @@
     "translation": "",
     "asked": true,
     "outcome": "asked_intent",
-    "ms": 4038,
+    "ms": 7787,
     "actions": 2,
     "intent_ok": false
    }
@@ -386,31 +386,31 @@
    "id": "zh-wheelchair",
    "expect": "resolved",
    "A": {
-    "translation": "結構です。/ 大丈夫です。",
+    "translation": "結構です（必要ありません）。",
     "asked": false,
-    "ms": 1253,
+    "ms": 1410,
     "intent_ok": true
    },
    "B": {
     "translation": "大丈夫です（必要ありません）。",
     "asked": false,
-    "ms": 3089,
+    "ms": 2914,
     "intent": "RESOLVED",
     "intent_ok": true
    },
    "C": {
-    "translation": "大丈夫です（必要ありません）。",
+    "translation": "結構です（不要です）。",
     "asked": false,
     "outcome": "sent",
-    "ms": 7246,
+    "ms": 9874,
     "actions": 1,
     "intent_ok": true
    },
    "D": {
-    "translation": "大丈夫です（必要ありません）。",
+    "translation": "結構です（不要です）。",
     "asked": false,
     "outcome": "sent",
-    "ms": 7246,
+    "ms": 9874,
     "actions": 1,
     "intent_ok": true
    }
@@ -419,15 +419,15 @@
    "id": "zh-ack",
    "expect": "resolved",
    "A": {
-    "translation": "わかりました。",
+    "translation": "分かりました。",
     "asked": false,
-    "ms": 1581,
+    "ms": 1370,
     "intent_ok": true
    },
    "B": {
     "translation": "分かりました。",
     "asked": false,
-    "ms": 4598,
+    "ms": 2485,
     "intent": "RESOLVED",
     "intent_ok": true
    },
@@ -435,7 +435,7 @@
     "translation": "分かりました。",
     "asked": false,
     "outcome": "sent",
-    "ms": 5952,
+    "ms": 5290,
     "actions": 1,
     "intent_ok": true
    },
@@ -443,7 +443,7 @@
     "translation": "分かりました。",
     "asked": false,
     "outcome": "sent",
-    "ms": 5952,
+    "ms": 5290,
     "actions": 1,
     "intent_ok": true
    }
@@ -454,13 +454,13 @@
    "A": {
     "translation": "はい。",
     "asked": false,
-    "ms": 3358,
+    "ms": 1214,
     "intent_ok": false
    },
    "B": {
     "translation": "",
     "asked": true,
-    "ms": 4238,
+    "ms": 6359,
     "intent": "CLARIFICATION_REQUIRED",
     "intent_ok": false
    },
@@ -468,7 +468,7 @@
     "translation": "",
     "asked": true,
     "outcome": "asked_intent",
-    "ms": 4138,
+    "ms": 2771,
     "actions": 2,
     "intent_ok": false
    },
@@ -476,7 +476,7 @@
     "translation": "",
     "asked": true,
     "outcome": "asked_intent",
-    "ms": 4138,
+    "ms": 2771,
     "actions": 2,
     "intent_ok": false
    }
@@ -487,13 +487,13 @@
    "A": {
     "translation": "はい、大丈夫です。",
     "asked": false,
-    "ms": 1527,
+    "ms": 2309,
     "intent_ok": true
    },
    "B": {
     "translation": "はい、大丈夫です。",
     "asked": false,
-    "ms": 2364,
+    "ms": 3304,
     "intent": "RESOLVED",
     "intent_ok": true
    },
@@ -501,7 +501,7 @@
     "translation": "はい、大丈夫です。",
     "asked": false,
     "outcome": "sent",
-    "ms": 8387,
+    "ms": 6204,
     "actions": 1,
     "intent_ok": true
    },
@@ -509,7 +509,7 @@
     "translation": "はい、大丈夫です。",
     "asked": false,
     "outcome": "sent",
-    "ms": 8387,
+    "ms": 6204,
     "actions": 1,
     "intent_ok": true
    }
@@ -520,29 +520,29 @@
    "A": {
     "translation": "大丈夫です。",
     "asked": false,
-    "ms": 1420,
+    "ms": 4006,
     "intent_ok": true
    },
    "B": {
-    "translation": "大丈夫です（痛くはありません）。",
+    "translation": "大丈夫です。",
     "asked": false,
-    "ms": 2796,
+    "ms": 3558,
     "intent": "RESOLVED",
     "intent_ok": true
    },
    "C": {
-    "translation": "大丈夫です。",
+    "translation": "大丈夫です（痛みはありません）。",
     "asked": false,
     "outcome": "sent",
-    "ms": 10579,
+    "ms": 7213,
     "actions": 1,
     "intent_ok": true
    },
    "D": {
-    "translation": "大丈夫です。",
+    "translation": "大丈夫です（痛みはありません）。",
     "asked": false,
     "outcome": "sent",
-    "ms": 10579,
+    "ms": 7213,
     "actions": 1,
     "intent_ok": true
    }
@@ -553,13 +553,13 @@
    "A": {
     "translation": "大丈夫です、ありがとうございます。",
     "asked": false,
-    "ms": 1285,
+    "ms": 6771,
     "intent_ok": true
    },
    "B": {
     "translation": "大丈夫です、ありがとうございます。",
     "asked": false,
-    "ms": 3327,
+    "ms": 3134,
     "intent": "RESOLVED",
     "intent_ok": true
    },
@@ -567,7 +567,7 @@
     "translation": "大丈夫です、ありがとうございます。",
     "asked": false,
     "outcome": "sent",
-    "ms": 10045,
+    "ms": 5170,
     "actions": 1,
     "intent_ok": true
    },
@@ -575,7 +575,7 @@
     "translation": "大丈夫です、ありがとうございます。",
     "asked": false,
     "outcome": "sent",
-    "ms": 10045,
+    "ms": 5170,
     "actions": 1,
     "intent_ok": true
    }
@@ -586,13 +586,13 @@
    "A": {
     "translation": "大丈夫です。",
     "asked": false,
-    "ms": 1614,
+    "ms": 1558,
     "intent_ok": false
    },
    "B": {
     "translation": "",
     "asked": true,
-    "ms": 3847,
+    "ms": 3576,
     "intent": "CLARIFICATION_REQUIRED",
     "intent_ok": false
    },
@@ -600,7 +600,7 @@
     "translation": "",
     "asked": true,
     "outcome": "asked_intent",
-    "ms": 2850,
+    "ms": 3296,
     "actions": 2,
     "intent_ok": false
    },
@@ -608,7 +608,7 @@
     "translation": "",
     "asked": true,
     "outcome": "asked_intent",
-    "ms": 2850,
+    "ms": 3296,
     "actions": 2,
     "intent_ok": false
    }
@@ -619,13 +619,13 @@
    "A": {
     "translation": "そうでもないです。",
     "asked": false,
-    "ms": 1555,
+    "ms": 1650,
     "intent_ok": false
    },
    "B": {
-    "translation": "それほどでもないです。",
+    "translation": "あまり痛くありません。",
     "asked": false,
-    "ms": 2848,
+    "ms": 3016,
     "intent": "RESOLVED",
     "intent_ok": true
    },
@@ -633,7 +633,7 @@
     "translation": "それほどでもないです。",
     "asked": false,
     "outcome": "sent",
-    "ms": 11491,
+    "ms": 6351,
     "actions": 1,
     "intent_ok": true
    },
@@ -641,7 +641,7 @@
     "translation": "それほどでもないです。",
     "asked": false,
     "outcome": "sent",
-    "ms": 11491,
+    "ms": 6351,
     "actions": 1,
     "intent_ok": true
    }
@@ -652,29 +652,29 @@
    "A": {
     "translation": "そうだと思います。",
     "asked": false,
-    "ms": 2201,
+    "ms": 1523,
     "intent_ok": true
    },
    "B": {
     "translation": "そうだと思います（飲んだと思います）。",
     "asked": false,
-    "ms": 2642,
+    "ms": 2840,
     "intent": "RESOLVED",
     "intent_ok": true
    },
    "C": {
-    "translation": "そうだと思います。",
+    "translation": "そうだと思います（飲んだと思います）。",
     "asked": false,
     "outcome": "sent",
-    "ms": 14796,
+    "ms": 6320,
     "actions": 1,
     "intent_ok": true
    },
    "D": {
-    "translation": "そうだと思います。",
+    "translation": "そうだと思います（飲んだと思います）。",
     "asked": false,
     "outcome": "sent",
-    "ms": 14796,
+    "ms": 6320,
     "actions": 1,
     "intent_ok": true
    }
@@ -685,13 +685,13 @@
    "A": {
     "translation": "分かりました。",
     "asked": false,
-    "ms": 2088,
+    "ms": 1262,
     "intent_ok": true
    },
    "B": {
     "translation": "わかりました。",
     "asked": false,
-    "ms": 3078,
+    "ms": 2651,
     "intent": "RESOLVED",
     "intent_ok": true
    },
@@ -699,7 +699,7 @@
     "translation": "わかりました。",
     "asked": false,
     "outcome": "sent",
-    "ms": 9338,
+    "ms": 10252,
     "actions": 1,
     "intent_ok": true
    },
@@ -707,7 +707,7 @@
     "translation": "わかりました。",
     "asked": false,
     "outcome": "sent",
-    "ms": 9338,
+    "ms": 10252,
     "actions": 1,
     "intent_ok": true
    }
@@ -716,15 +716,15 @@
    "id": "en-sure",
    "expect": "clarify",
    "A": {
-    "translation": "はい、わかりました。",
+    "translation": "分かりました。",
     "asked": false,
-    "ms": 1647,
+    "ms": 1402,
     "intent_ok": false
    },
    "B": {
     "translation": "",
     "asked": true,
-    "ms": 3903,
+    "ms": 2879,
     "intent": "CLARIFICATION_REQUIRED",
     "intent_ok": false
    },
@@ -732,7 +732,7 @@
     "translation": "",
     "asked": true,
     "outcome": "asked_intent",
-    "ms": 3607,
+    "ms": 2395,
     "actions": 2,
     "intent_ok": false
    },
@@ -740,7 +740,7 @@
     "translation": "",
     "asked": true,
     "outcome": "asked_intent",
-    "ms": 3607,
+    "ms": 2395,
     "actions": 2,
     "intent_ok": false
    }
@@ -751,13 +751,13 @@
    "A": {
     "translation": "大丈夫です。",
     "asked": false,
-    "ms": 1576,
+    "ms": 2974,
     "intent_ok": true
    },
    "B": {
     "translation": "大丈夫です（痛くはありません）。",
     "asked": false,
-    "ms": 5788,
+    "ms": 2851,
     "intent": "RESOLVED",
     "intent_ok": true
    },
@@ -765,7 +765,7 @@
     "translation": "大丈夫です（痛くありません）。",
     "asked": false,
     "outcome": "sent",
-    "ms": 6578,
+    "ms": 5954,
     "actions": 1,
     "intent_ok": true
    },
@@ -773,7 +773,7 @@
     "translation": "大丈夫です（痛くありません）。",
     "asked": false,
     "outcome": "sent",
-    "ms": 6578,
+    "ms": 5954,
     "actions": 1,
     "intent_ok": true
    }
@@ -784,13 +784,13 @@
    "A": {
     "translation": "大丈夫です、自分でできます。",
     "asked": false,
-    "ms": 1397,
+    "ms": 1265,
     "intent_ok": true
    },
    "B": {
     "translation": "大丈夫です、自分でできます。",
     "asked": false,
-    "ms": 2885,
+    "ms": 3047,
     "intent": "RESOLVED",
     "intent_ok": true
    },
@@ -798,7 +798,7 @@
     "translation": "大丈夫です、自分でできます。",
     "asked": false,
     "outcome": "sent",
-    "ms": 5247,
+    "ms": 7175,
     "actions": 1,
     "intent_ok": true
    },
@@ -806,7 +806,7 @@
     "translation": "大丈夫です、自分でできます。",
     "asked": false,
     "outcome": "sent",
-    "ms": 5247,
+    "ms": 7175,
     "actions": 1,
     "intent_ok": true
    }
@@ -817,13 +817,13 @@
    "A": {
     "translation": "はい。",
     "asked": false,
-    "ms": 1507,
+    "ms": 1797,
     "intent_ok": false
    },
    "B": {
     "translation": "",
     "asked": true,
-    "ms": 4152,
+    "ms": 4124,
     "intent": "CLARIFICATION_REQUIRED",
     "intent_ok": false
    },
@@ -831,7 +831,7 @@
     "translation": "",
     "asked": true,
     "outcome": "asked_intent",
-    "ms": 3956,
+    "ms": 7355,
     "actions": 2,
     "intent_ok": false
    },
@@ -839,7 +839,7 @@
     "translation": "",
     "asked": true,
     "outcome": "asked_intent",
-    "ms": 3956,
+    "ms": 7355,
     "actions": 2,
     "intent_ok": false
    }
@@ -856,7 +856,7 @@
    ],
    "D_forbidden": [],
    "D_rejected_ungrounded": 0,
-   "ms": 11704
+   "ms": 6989
   },
   {
    "id": "m-zh-days",
@@ -864,21 +864,23 @@
    "A_forbidden": [],
    "D_found": true,
    "D_candidates": [
-    "好几天"
+    "好几天了"
    ],
    "D_forbidden": [],
    "D_rejected_ungrounded": 0,
-   "ms": 9419
+   "ms": 4208
   },
   {
    "id": "m-zh-sometimes",
    "expected": true,
    "A_forbidden": [],
    "D_found": false,
-   "D_candidates": [],
+   "D_candidates": [
+    "胸口疼"
+   ],
    "D_forbidden": [],
    "D_rejected_ungrounded": 0,
-   "ms": 7991
+   "ms": 5224
   },
   {
    "id": "m-zh-tight",
@@ -890,7 +892,7 @@
    ],
    "D_forbidden": [],
    "D_rejected_ungrounded": 0,
-   "ms": 9446
+   "ms": 3793
   },
   {
    "id": "m-zh-diarrhea",
@@ -902,7 +904,7 @@
    ],
    "D_forbidden": [],
    "D_rejected_ungrounded": 0,
-   "ms": 4058
+   "ms": 8730
   },
   {
    "id": "m-zh-nofever",
@@ -912,7 +914,7 @@
    "D_candidates": [],
    "D_forbidden": [],
    "D_rejected_ungrounded": 0,
-   "ms": 3959
+   "ms": 2444
   },
   {
    "id": "m-zh-fever385",
@@ -922,7 +924,7 @@
    "D_candidates": [],
    "D_forbidden": [],
    "D_rejected_ungrounded": 0,
-   "ms": 2933
+   "ms": 2314
   },
   {
    "id": "m-en-dizzy",
@@ -934,7 +936,7 @@
    ],
    "D_forbidden": [],
    "D_rejected_ungrounded": 0,
-   "ms": 5099
+   "ms": 4370
   },
   {
    "id": "m-en-while",
@@ -946,7 +948,7 @@
    ],
    "D_forbidden": [],
    "D_rejected_ungrounded": 0,
-   "ms": 4882
+   "ms": 3723
   },
   {
    "id": "m-en-funny",
@@ -958,7 +960,7 @@
    ],
    "D_forbidden": [],
    "D_rejected_ungrounded": 0,
-   "ms": 4007
+   "ms": 4185
   },
   {
    "id": "m-en-weak",
@@ -970,7 +972,7 @@
    ],
    "D_forbidden": [],
    "D_rejected_ungrounded": 0,
-   "ms": 4721
+   "ms": 5173
   },
   {
    "id": "m-en-sick",
@@ -982,7 +984,7 @@
    ],
    "D_forbidden": [],
    "D_rejected_ungrounded": 0,
-   "ms": 4325
+   "ms": 3897
   },
   {
    "id": "m-en-allergy",
@@ -992,7 +994,7 @@
    "D_candidates": [],
    "D_forbidden": [],
    "D_rejected_ungrounded": 0,
-   "ms": 2597
+   "ms": 2358
   },
   {
    "id": "m-en-reception",
@@ -1002,7 +1004,7 @@
    "D_candidates": [],
    "D_forbidden": [],
    "D_rejected_ungrounded": 0,
-   "ms": 2189
+   "ms": 2622
   },
   {
    "id": "m-en-ibuprofen",
@@ -1012,7 +1014,7 @@
    "D_candidates": [],
    "D_forbidden": [],
    "D_rejected_ungrounded": 0,
-   "ms": 1987
+   "ms": 2364
   },
   {
    "id": "m-vi-dizzy",
@@ -1024,19 +1026,17 @@
    ],
    "D_forbidden": [],
    "D_rejected_ungrounded": 0,
-   "ms": 6951
+   "ms": 7526
   },
   {
    "id": "m-vi-days",
    "expected": true,
    "A_forbidden": [],
-   "D_found": true,
-   "D_candidates": [
-    "Mấy bữa nay"
-   ],
+   "D_found": false,
+   "D_candidates": [],
    "D_forbidden": [],
    "D_rejected_ungrounded": 0,
-   "ms": 8997
+   "ms": 5308
   },
   {
    "id": "m-vi-chest",
@@ -1048,7 +1048,7 @@
    ],
    "D_forbidden": [],
    "D_rejected_ungrounded": 0,
-   "ms": 5080
+   "ms": 3743
   },
   {
    "id": "m-vi-uneasy",
@@ -1060,7 +1060,7 @@
    ],
    "D_forbidden": [],
    "D_rejected_ungrounded": 0,
-   "ms": 5123
+   "ms": 4330
   },
   {
    "id": "m-vi-nofever",
@@ -1070,7 +1070,7 @@
    "D_candidates": [],
    "D_forbidden": [],
    "D_rejected_ungrounded": 0,
-   "ms": 2151
+   "ms": 2258
   }
  ],
  "precision": [
@@ -1079,11 +1079,11 @@
    "error_type": "frequency",
    "A": {
     "changed": false,
-    "ms": 2127
+    "ms": 1481
    },
    "B": {
     "changed": false,
-    "ms": 2127
+    "ms": 1481
    },
    "C": {
     "changed": false,
@@ -1091,7 +1091,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 9046,
+    "ms": 9218,
     "actions": 1
    },
    "D": {
@@ -1100,7 +1100,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 9046,
+    "ms": 9218,
     "actions": 1
    },
    "injected": {
@@ -1113,11 +1113,11 @@
    "error_type": "negation",
    "A": {
     "changed": false,
-    "ms": 1320
+    "ms": 1395
    },
    "B": {
     "changed": false,
-    "ms": 1320
+    "ms": 1395
    },
    "C": {
     "changed": false,
@@ -1125,7 +1125,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 7082,
+    "ms": 6442,
     "actions": 1
    },
    "D": {
@@ -1134,7 +1134,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 7082,
+    "ms": 6442,
     "actions": 1
    },
    "injected": {
@@ -1147,11 +1147,11 @@
    "error_type": "quantity_omission",
    "A": {
     "changed": false,
-    "ms": 7023
+    "ms": 2058
    },
    "B": {
     "changed": false,
-    "ms": 7023
+    "ms": 2058
    },
    "C": {
     "changed": false,
@@ -1159,7 +1159,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 8700,
+    "ms": 7861,
     "actions": 1
    },
    "D": {
@@ -1168,7 +1168,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 8700,
+    "ms": 7861,
     "actions": 1
    },
    "injected": {
@@ -1181,31 +1181,29 @@
    "error_type": "time",
    "A": {
     "changed": false,
-    "ms": 2246
+    "ms": 1753
    },
    "B": {
     "changed": false,
-    "ms": 2246
+    "ms": 1753
    },
    "C": {
     "changed": false,
-    "outcome": "needs_review",
+    "outcome": "sent",
     "attempts": [
-     "MISMATCH",
-     "MISMATCH"
+     "VERIFIED"
     ],
-    "ms": 14336,
-    "actions": 2
+    "ms": 15896,
+    "actions": 1
    },
    "D": {
     "changed": false,
-    "outcome": "needs_review",
+    "outcome": "sent",
     "attempts": [
-     "MISMATCH",
-     "MISMATCH"
+     "VERIFIED"
     ],
-    "ms": 14336,
-    "actions": 2
+    "ms": 15896,
+    "actions": 1
    },
    "injected": {
     "corrupted": "MISMATCH",
@@ -1217,11 +1215,11 @@
    "error_type": "time",
    "A": {
     "changed": false,
-    "ms": 1479
+    "ms": 1516
    },
    "B": {
     "changed": false,
-    "ms": 1479
+    "ms": 1516
    },
    "C": {
     "changed": false,
@@ -1229,7 +1227,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 6591,
+    "ms": 6533,
     "actions": 1
    },
    "D": {
@@ -1238,7 +1236,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 6591,
+    "ms": 6533,
     "actions": 1
    },
    "injected": {
@@ -1251,11 +1249,11 @@
    "error_type": "quantity_swap",
    "A": {
     "changed": false,
-    "ms": 1696
+    "ms": 1521
    },
    "B": {
     "changed": false,
-    "ms": 1696
+    "ms": 1521
    },
    "C": {
     "changed": false,
@@ -1264,7 +1262,7 @@
      "MISMATCH",
      "VERIFIED"
     ],
-    "ms": 13769,
+    "ms": 11872,
     "actions": 1
    },
    "D": {
@@ -1274,7 +1272,7 @@
      "MISMATCH",
      "VERIFIED"
     ],
-    "ms": 13769,
+    "ms": 11872,
     "actions": 1
    },
    "injected": {
@@ -1287,11 +1285,11 @@
    "error_type": "quantity",
    "A": {
     "changed": false,
-    "ms": 3538
+    "ms": 1454
    },
    "B": {
     "changed": false,
-    "ms": 3538
+    "ms": 1454
    },
    "C": {
     "changed": false,
@@ -1299,7 +1297,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 15100,
+    "ms": 9564,
     "actions": 1
    },
    "D": {
@@ -1308,7 +1306,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 15100,
+    "ms": 9564,
     "actions": 1
    },
    "injected": {
@@ -1321,11 +1319,11 @@
    "error_type": "condition_missing",
    "A": {
     "changed": false,
-    "ms": 1459
+    "ms": 1502
    },
    "B": {
     "changed": false,
-    "ms": 1459
+    "ms": 1502
    },
    "C": {
     "changed": false,
@@ -1333,7 +1331,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 12153,
+    "ms": 11870,
     "actions": 1
    },
    "D": {
@@ -1342,7 +1340,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 12153,
+    "ms": 11870,
     "actions": 1
    },
    "injected": {
@@ -1355,11 +1353,11 @@
    "error_type": "condition_missing",
    "A": {
     "changed": false,
-    "ms": 1963
+    "ms": 3077
    },
    "B": {
     "changed": false,
-    "ms": 1963
+    "ms": 3077
    },
    "C": {
     "changed": false,
@@ -1367,7 +1365,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 10452,
+    "ms": 6138,
     "actions": 1
    },
    "D": {
@@ -1376,7 +1374,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 10452,
+    "ms": 6138,
     "actions": 1
    },
    "injected": {
@@ -1389,11 +1387,11 @@
    "error_type": "clock",
    "A": {
     "changed": false,
-    "ms": 2616
+    "ms": 1414
    },
    "B": {
     "changed": false,
-    "ms": 2616
+    "ms": 1414
    },
    "C": {
     "changed": false,
@@ -1401,7 +1399,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 11576,
+    "ms": 9467,
     "actions": 1
    },
    "D": {
@@ -1410,7 +1408,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 11576,
+    "ms": 9467,
     "actions": 1
    },
    "injected": {
@@ -1423,35 +1421,33 @@
    "error_type": "frequency",
    "A": {
     "changed": false,
-    "ms": 1648
+    "ms": 3031
    },
    "B": {
     "changed": false,
-    "ms": 1648
+    "ms": 3031
    },
    "C": {
     "changed": false,
     "outcome": "sent",
     "attempts": [
-     "MISMATCH",
      "VERIFIED"
     ],
-    "ms": 18617,
+    "ms": 6883,
     "actions": 1
    },
    "D": {
     "changed": false,
     "outcome": "sent",
     "attempts": [
-     "MISMATCH",
      "VERIFIED"
     ],
-    "ms": 18617,
+    "ms": 6883,
     "actions": 1
    },
    "injected": {
     "corrupted": "MISMATCH",
-    "reference": "MISMATCH"
+    "reference": "VERIFIED"
    }
   },
   {
@@ -1459,11 +1455,11 @@
    "error_type": "negation",
    "A": {
     "changed": false,
-    "ms": 3466
+    "ms": 1441
    },
    "B": {
     "changed": false,
-    "ms": 3466
+    "ms": 1441
    },
    "C": {
     "changed": false,
@@ -1471,7 +1467,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 8227,
+    "ms": 5281,
     "actions": 1
    },
    "D": {
@@ -1480,7 +1476,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 8227,
+    "ms": 5281,
     "actions": 1
    },
    "injected": {
@@ -1493,11 +1489,11 @@
    "error_type": "negation",
    "A": {
     "changed": false,
-    "ms": 1967
+    "ms": 1488
    },
    "B": {
     "changed": false,
-    "ms": 1967
+    "ms": 1488
    },
    "C": {
     "changed": false,
@@ -1505,7 +1501,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 8016,
+    "ms": 10653,
     "actions": 1
    },
    "D": {
@@ -1514,7 +1510,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 8016,
+    "ms": 10653,
     "actions": 1
    },
    "injected": {
@@ -1527,11 +1523,11 @@
    "error_type": "negation",
    "A": {
     "changed": false,
-    "ms": 2167
+    "ms": 1567
    },
    "B": {
     "changed": false,
-    "ms": 2167
+    "ms": 1567
    },
    "C": {
     "changed": false,
@@ -1539,7 +1535,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 6535,
+    "ms": 9589,
     "actions": 1
    },
    "D": {
@@ -1548,7 +1544,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 6535,
+    "ms": 9589,
     "actions": 1
    },
    "injected": {
@@ -1561,11 +1557,11 @@
    "error_type": "quantity",
    "A": {
     "changed": false,
-    "ms": 1612
+    "ms": 1392
    },
    "B": {
     "changed": false,
-    "ms": 1612
+    "ms": 1392
    },
    "C": {
     "changed": false,
@@ -1573,7 +1569,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 14075,
+    "ms": 9234,
     "actions": 1
    },
    "D": {
@@ -1582,7 +1578,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 14075,
+    "ms": 9234,
     "actions": 1
    },
    "injected": {
@@ -1595,11 +1591,11 @@
    "error_type": "time",
    "A": {
     "changed": false,
-    "ms": 1634
+    "ms": 1948
    },
    "B": {
     "changed": false,
-    "ms": 1634
+    "ms": 1948
    },
    "C": {
     "changed": false,
@@ -1607,7 +1603,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 6515,
+    "ms": 11000,
     "actions": 1
    },
    "D": {
@@ -1616,7 +1612,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 6515,
+    "ms": 11000,
     "actions": 1
    },
    "injected": {
@@ -1629,11 +1625,11 @@
    "error_type": "negation",
    "A": {
     "changed": false,
-    "ms": 1430
+    "ms": 1605
    },
    "B": {
     "changed": false,
-    "ms": 1430
+    "ms": 1605
    },
    "C": {
     "changed": false,
@@ -1641,7 +1637,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 7366,
+    "ms": 5450,
     "actions": 1
    },
    "D": {
@@ -1650,7 +1646,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 7366,
+    "ms": 5450,
     "actions": 1
    },
    "injected": {
@@ -1663,11 +1659,11 @@
    "error_type": "quantity",
    "A": {
     "changed": false,
-    "ms": 1585
+    "ms": 1462
    },
    "B": {
     "changed": false,
-    "ms": 1585
+    "ms": 1462
    },
    "C": {
     "changed": false,
@@ -1675,7 +1671,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 7559,
+    "ms": 6215,
     "actions": 1
    },
    "D": {
@@ -1684,7 +1680,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 7559,
+    "ms": 6215,
     "actions": 1
    },
    "injected": {
@@ -1697,11 +1693,11 @@
    "error_type": "weekday",
    "A": {
     "changed": false,
-    "ms": 1324
+    "ms": 1295
    },
    "B": {
     "changed": false,
-    "ms": 1324
+    "ms": 1295
    },
    "C": {
     "changed": false,
@@ -1709,7 +1705,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 6956,
+    "ms": 6016,
     "actions": 1
    },
    "D": {
@@ -1718,7 +1714,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 6956,
+    "ms": 6016,
     "actions": 1
    },
    "injected": {
@@ -1731,11 +1727,11 @@
    "error_type": "quantity",
    "A": {
     "changed": false,
-    "ms": 1662
+    "ms": 7725
    },
    "B": {
     "changed": false,
-    "ms": 1662
+    "ms": 7725
    },
    "C": {
     "changed": false,
@@ -1743,7 +1739,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 11645,
+    "ms": 15355,
     "actions": 1
    },
    "D": {
@@ -1752,7 +1748,7 @@
     "attempts": [
      "VERIFIED"
     ],
-    "ms": 11645,
+    "ms": 15355,
     "actions": 1
    },
    "injected": {
@@ -1766,121 +1762,121 @@
    "id": "e-take",
    "expected": true,
    "D_flagged": true,
-   "ms": 2270
+   "ms": 4268
   },
   {
    "id": "e-tomorrow",
    "expected": true,
    "D_flagged": false,
-   "ms": 2665
+   "ms": 2168
   },
   {
    "id": "e-fast",
    "expected": true,
    "D_flagged": false,
-   "ms": 8132
+   "ms": 1539
   },
   {
    "id": "e-prn",
    "expected": true,
    "D_flagged": false,
-   "ms": 3240
+   "ms": 1741
   },
   {
    "id": "e-ointment",
    "expected": true,
    "D_flagged": true,
-   "ms": 2472
+   "ms": 7444
   },
   {
    "id": "e-rest",
    "expected": true,
    "D_flagged": false,
-   "ms": 2253
+   "ms": 2239
   },
   {
    "id": "e-eyedrop",
    "expected": true,
-   "D_flagged": true,
-   "ms": 2998
+   "D_flagged": false,
+   "ms": 5060
   },
   {
    "id": "e-result",
    "expected": true,
    "D_flagged": false,
-   "ms": 2370
+   "ms": 1495
   },
   {
    "id": "e-reduce",
    "expected": true,
    "D_flagged": true,
-   "ms": 2159
+   "ms": 4658
   },
   {
    "id": "e-inhaler",
    "expected": true,
    "D_flagged": true,
-   "ms": 7189
+   "ms": 2250
   },
   {
    "id": "e-water",
    "expected": false,
    "D_flagged": false,
-   "ms": 1794
+   "ms": 1917
   },
   {
    "id": "e-swelling",
    "expected": false,
    "D_flagged": false,
-   "ms": 2294
+   "ms": 1784
   },
   {
    "id": "e-reception",
    "expected": false,
    "D_flagged": false,
-   "ms": 1471
+   "ms": 1656
   },
   {
    "id": "e-after-breakfast",
    "expected": false,
    "D_flagged": false,
-   "ms": 1388
+   "ms": 2551
   },
   {
    "id": "e-full",
    "expected": false,
    "D_flagged": false,
-   "ms": 1817
+   "ms": 1695
   },
   {
    "id": "e-blood",
    "expected": false,
    "D_flagged": false,
-   "ms": 2042
+   "ms": 1973
   },
   {
    "id": "e-3days",
    "expected": false,
    "D_flagged": false,
-   "ms": 1718
+   "ms": 2553
   },
   {
    "id": "e-shower",
    "expected": false,
    "D_flagged": false,
-   "ms": 1872
+   "ms": 2857
   },
   {
    "id": "e-bandage",
    "expected": false,
    "D_flagged": false,
-   "ms": 1483
+   "ms": 2084
   },
   {
    "id": "e-painkiller",
    "expected": false,
    "D_flagged": false,
-   "ms": 2058
+   "ms": 1975
   }
  ],
  "understanding": [
@@ -1894,7 +1890,7 @@
     "量: 説明 1錠 / 理解 2錠",
     "時間帯: 説明は 朝・夕・夜、理解は 朝 だけ"
    ],
-   "ms": 2996
+   "ms": 3290
   },
   {
    "id": "u-dose-right",
@@ -1903,7 +1899,7 @@
    "D_llm": false,
    "D_flagged": false,
    "rule_detail": [],
-   "ms": 1653
+   "ms": 1635
   },
   {
    "id": "u-wait-wrong",
@@ -1914,7 +1910,7 @@
    "rule_detail": [
     "日: 説明 今日 / 理解 明日"
    ],
-   "ms": 2270
+   "ms": 2724
   },
   {
    "id": "u-wait-right",
@@ -1923,16 +1919,18 @@
    "D_llm": false,
    "D_flagged": false,
    "rule_detail": [],
-   "ms": 1773
+   "ms": 2086
   },
   {
    "id": "u-fast-wrong",
    "expected": true,
-   "D_rule": false,
+   "D_rule": true,
    "D_llm": true,
    "D_flagged": true,
-   "rule_detail": [],
-   "ms": 2914
+   "rule_detail": [
+    "してよい／してはいけないが逆"
+   ],
+   "ms": 2768
   },
   {
    "id": "u-monday-wrong",
@@ -1943,7 +1941,7 @@
    "rule_detail": [
     "日: 説明 月曜・来週 / 理解 月曜・今週"
    ],
-   "ms": 2658
+   "ms": 2472
   },
   {
    "id": "u-monday-right",
@@ -1952,16 +1950,18 @@
    "D_llm": false,
    "D_flagged": false,
    "rule_detail": [],
-   "ms": 8476
+   "ms": 2065
   },
   {
    "id": "u-alcohol-wrong",
    "expected": true,
-   "D_rule": false,
+   "D_rule": true,
    "D_llm": true,
    "D_flagged": true,
-   "rule_detail": [],
-   "ms": 2758
+   "rule_detail": [
+    "してよい／してはいけないが逆"
+   ],
+   "ms": 2729
   },
   {
    "id": "u-pain-wrong",
@@ -1970,7 +1970,7 @@
    "D_llm": true,
    "D_flagged": true,
    "rule_detail": [],
-   "ms": 3253
+   "ms": 3719
   },
   {
    "id": "u-max-wrong",
@@ -1981,7 +1981,7 @@
    "rule_detail": [
     "量: 説明 2錠 / 理解 3錠"
    ],
-   "ms": 2616
+   "ms": 4228
   },
   {
    "id": "u-once-right",
@@ -1990,7 +1990,7 @@
    "D_llm": false,
    "D_flagged": false,
    "rule_detail": [],
-   "ms": 2270
+   "ms": 2078
   },
   {
    "id": "u-shower-wrong",
@@ -2002,7 +2002,7 @@
     "日: 説明 今日・明日 / 理解 今日",
     "してよい／してはいけないが逆"
    ],
-   "ms": 2301
+   "ms": 2719
   },
   {
    "id": "u-3days-right",
@@ -2011,7 +2011,7 @@
    "D_llm": false,
    "D_flagged": false,
    "rule_detail": [],
-   "ms": 1594
+   "ms": 2270
   },
   {
    "id": "u-ointment-wrong",
@@ -2022,7 +2022,7 @@
    "rule_detail": [
     "回数（1日）: 説明 2回 / 理解 1回"
    ],
-   "ms": 2629
+   "ms": 2743
   },
   {
    "id": "u-blood-wrong",
@@ -2031,7 +2031,7 @@
    "D_llm": true,
    "D_flagged": true,
    "rule_detail": [],
-   "ms": 4862
+   "ms": 2817
   }
  ],
  "teachback": [
@@ -2040,56 +2040,56 @@
    "expected": "inconsistent",
    "overall": "inconsistent",
    "flagged": true,
-   "ms": 5666
+   "ms": 1820
   },
   {
    "id": "zh-wait-today-right",
    "expected": "consistent",
    "overall": "consistent",
    "flagged": false,
-   "ms": 2576
+   "ms": 2476
   },
   {
    "id": "zh-medicine-right",
    "expected": "consistent",
    "overall": "consistent",
    "flagged": false,
-   "ms": 2938
+   "ms": 2105
   },
   {
    "id": "en-dose-wrong",
    "expected": "inconsistent",
    "overall": "inconsistent",
    "flagged": true,
-   "ms": 6494
+   "ms": 2750
   },
   {
    "id": "en-dose-right",
    "expected": "consistent",
    "overall": "consistent",
    "flagged": false,
-   "ms": 3178
+   "ms": 2529
   },
   {
    "id": "en-test-wait-right",
    "expected": "consistent",
    "overall": "consistent",
    "flagged": false,
-   "ms": 2836
+   "ms": 2641
   },
   {
    "id": "vi-revisit-wrong",
    "expected": "inconsistent",
    "overall": "inconsistent",
    "flagged": true,
-   "ms": 2259
+   "ms": 1704
   },
   {
    "id": "vi-revisit-right",
    "expected": "consistent",
    "overall": "consistent",
    "flagged": false,
-   "ms": 2501
+   "ms": 2134
   }
  ]
 }

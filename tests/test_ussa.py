@@ -396,3 +396,26 @@ def test_now_is_not_today_rule_is_the_same_for_source_and_translation_frames():
     rule = [ln for ln in (root / "prompts/source_system.txt").read_text(encoding="utf-8").splitlines()
             if "is not a date" in ln or "when the text names the day" in ln]
     assert len(rule) == 2 and all(ln in (root / "prompts/frame_system.txt").read_text(encoding="utf-8") for ln in rule)
+
+
+# ── 本物の Gemini で見つかった誤警報（2026-11-10、各コンポーネントの確認で 2/2）: 「帰らずに待って」を A は「待つべき＋帰るを否定」、
+#    B は「離れないで（禁止）」と取った。指示の negated も「禁止を含む」とみなし、両方に禁止があれば強い証拠にしない ──
+def test_instruction_with_negated_action_counts_as_prohibition():
+    a = full_frame("instruction", "affirmative", "should", "addressee", "wait", negated=["go home"])
+    b = full_frame("instruction", "negative", "must_not", "addressee", "leave", negated=["leave"])
+    assert not [i for i in U.compare_frames(a, b) if i["type"] == "polarity_flip" and i["strength"] == "strong"]
+
+
+def test_same_action_required_vs_prohibited_is_still_strong():
+    a = full_frame("instruction", "affirmative", "should", "addressee", "wait", negated=["go home"])
+    b = full_frame("instruction", "negative", "must_not", "addressee", "wait")       # 「待たないで」
+    assert [i for i in U.compare_frames(a, b) if i["type"] == "polarity_flip" and i["strength"] == "strong"]
+    c = full_frame("instruction", "affirmative", "may", "addressee", "go home")        # 「帰ってよい」（禁止が消えた）
+    assert [i for i in U.compare_frames(a, c) if i["type"] == "polarity_flip" and i["strength"] == "strong"]
+
+
+def test_negated_facts_in_statements_are_not_prohibitions():
+    a = full_frame("statement", "negative", "none", "speaker", "have", negated=["fever"])   # 「熱はありません」
+    b = full_frame("instruction", "negative", "must_not", "addressee", "eat")
+    assert [i for i in U.compare_frames(b, a) if i["type"] == "polarity_flip" and i["strength"] == "strong"] or \
+        U.compare_frames(b, a)  # 指示と陳述は別の相違（質問・指示）でも出る
