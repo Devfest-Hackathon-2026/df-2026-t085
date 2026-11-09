@@ -378,3 +378,12 @@ def test_same_duration_in_different_form_is_not_strong(a, b):
 ])
 def test_changed_or_missing_duration_is_still_strong(a, b):
     assert [i for i in U.compare_frames(a, b) if i["strength"] == "strong"]
+
+
+def test_rejected_amount_rule_is_the_same_for_source_and_translation_frames():
+    """否定・訂正された量（「2錠まとめてではなく」）は量に入れない、の規則が A と B で同じ。入れると、正しく言い直した患者に
+    理解の相違を出す（本物の Gemini で 9/9 → 0/9。eval/live_negated_quantity_check.py）。"""
+    root = Path(__file__).resolve().parent.parent
+    rule = [ln for ln in (root / "prompts/source_system.txt").read_text(encoding="utf-8").splitlines()
+            if "Only amounts the text" in ln or "morning and one at night" in ln]
+    assert len(rule) == 2 and all(ln in (root / "prompts/frame_system.txt").read_text(encoding="utf-8") for ln in rule)

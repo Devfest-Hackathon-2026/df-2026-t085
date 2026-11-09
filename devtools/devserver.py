@@ -6,6 +6,7 @@
 中身:
   - API は main.py をそのまま使う（/api/...）。Firestore はメモリ上の偽物（devtools/fakestore.py）、
     Gemini は決まった答えを返す偽物（devtools/fake_ai.py。DEMO.md のシナリオの発言だけ本物らしい答え）。
+    UNSAID_LIVE=1 なら Gemini だけ本物（UNSAID_VERTEX_PROJECT・ADC が要る）。
   - 画面の HTML / CSS / JS は web/ をそのまま配る。ただし web/unsaid.js（Firebase につなぐ部品）の代わりに
     devtools/web/unsaid-local.js を配る。画面のコードは同じものが動く。
   - 端末からの Firestore の読み書きは /_dev/... で受け、firestore.rules と同じ条件で確かめる（_allowed）。
@@ -34,8 +35,14 @@ from devtools import fake_ai, fakestore, rules  # noqa: E402
 
 DB = fakestore.FakeDB()
 fakestore.install(main, DB)
-fake_ai.install(unsaid_ai)
-fake_ai.DELAY_SEC = float(os.environ.get("FAKE_AI_DELAY", "0.8"))
+# UNSAID_LIVE=1: Gemini だけ本物にする（Vertex AI。UNSAID_VERTEX_PROJECT と ADC が要る。Firestore はメモリ上の偽物のまま）。
+# プレゼンの画面・デモ動画を本物の Gemini の出力で撮るため。既定は偽の AI（決まった答え）
+LIVE = os.environ.get("UNSAID_LIVE") == "1"
+if LIVE:
+    print(f"[devserver] 本物の Gemini: {unsaid_ai.MODEL} @ {unsaid_ai.LOCATION}（プロジェクト {unsaid_ai.PROJECT}）")
+else:
+    fake_ai.install(unsaid_ai)
+    fake_ai.DELAY_SEC = float(os.environ.get("FAKE_AI_DELAY", "0.8"))
 stt.transcribe = lambda audio, lang: ("", 0.0)  # 音声認識は使わない（文字で入力する）
 PATIENT_LANGS = ["en", "zh-CN", "vi"]
 

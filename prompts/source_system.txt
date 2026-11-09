@@ -62,6 +62,8 @@ Fill only what the text itself says. Unknown stays unknown: "none", "unknown", "
   clock: "HH:MM" 24h. date: "MM-DD". duration: ISO 8601 ("P3D", "P2W", "PT30M"). part_of_day: morning | noon | afternoon | evening | night | bedtime.
 - quantities: amounts with a unit (value as a number, "half" = 0.5): unit in tablet | capsule | mg | g | ml | drop | pack |
   times | day | week | month | hour | minute | celsius | year | other; of = English concept. Do not put frequencies here.
+  Only amounts the text asks for or reports. An amount the text rejects or corrects ("not two at once, one in the
+  morning and one at night", "5 days, not 3") is not a quantity: put that phrase in negated (e.g. "two tablets at once").
 - frequency: "twice a day" = {count: 2, per: "day"}; "every 8 hours" = {count: 1, per: "hour"} is wrong — use quantities/duration for intervals.
 - conditions: lowercase English concepts of conditions ("until the test results are out", "if the pain gets worse").
   Upper limits are not conditions ("up to 2 tablets at a time", "no more than 3 times a day"): put the numbers in

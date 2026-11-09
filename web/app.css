@@ -135,8 +135,10 @@ mark { background: var(--mark); color: var(--ink); border-radius: 4px; padding: 
 /* ───────── 医師 PC ───────── */
 .d-app { height: 100dvh; display: flex; }
 .d-main { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; padding: 28px 40px; }
-.d-head { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--sub); }
-.d-log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 22px; padding: 24px 0; }
+.d-head { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--sub);
+  position: relative; z-index: 1; background: var(--ground); }
+.d-log { flex: 1; min-height: 0; overflow-y: auto;
+  -webkit-mask-image: linear-gradient(transparent, #000 28px); mask-image: linear-gradient(transparent, #000 28px); display: flex; flex-direction: column; gap: 22px; padding: 24px 0; }
 .d-log > :first-child { margin-top: auto; }
 .d-mine { align-self: flex-end; max-width: 70%; font-size: 17px; color: var(--sub); text-align: right; }
 .d-mine .st { font-size: 13px; color: var(--ok); margin-left: 6px; white-space: nowrap; }
