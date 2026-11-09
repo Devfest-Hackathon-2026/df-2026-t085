@@ -7,7 +7,40 @@ API のレスポンスを使わなくても、結果は同じメッセージに�
 > 下の「医師が選ぶ流れ」が今の約束。その後ろの節は従来の流れ（`CLARIFY_MODE=patient`）として残している。
 > データの形と状態遷移は [ARCHITECTURE.md](../ARCHITECTURE.md)、判断の理由は [DESIGN_DECISIONS.md](../DESIGN_DECISIONS.md)。
 
-## 医師が選ぶ流れ（既定）
+## UNSAID 2.0: Safety Gate を通る送信（既定・2026-11-09）
+
+端末がするのは「発言を作る（＝送信操作）」と、その id で API を呼ぶことだけ。**`status: sent` を書けるのはサーバーだけ**（firestore.rules）。
+医師の発言も患者の発言も同じ流れ（[ARCHITECTURE.md](../ARCHITECTURE.md) の 3・4）。
+
+```
+端末   addDoc {from, original, status:"analyzing"[, replyTo, answer]}  → 患者 POST /analyze ／ 医師 POST /translate
+API    gate.state: SOURCE_CONFIRMED → ANALYZING →（意図が決まらない）AWAITING_INTENT_CLARIFICATION（status "awaiting_intent"）
+                                             → VERIFYING → READY_TO_SEND → SENT（status "sent"、translation を書く）
+                                                         → NEEDS_REVIEW（status "needs_review"。自動では送らない）
+端末   AWAITING のとき: POST /intent {messageId, choice: "i1"… | "free_text" + text | "none"}
+       NEEDS_REVIEW のとき: POST /review {messageId, action: "send_unverified" | "rephrase"}
+       いつでも（送る前）: POST /cancel {messageId}
+医師   患者の未着の発言: POST /reveal {messageId} → {original, lang, state, verified:false, draft}
+医師   未解決事項: POST /issue/update {issueId, action: hold | unhold | resolve | dismiss | reopen, note?}
+```
+
+| メソッド | パス | 誰が | 成功時 | 断るとき |
+|---|---|---|---|---|
+| POST | `/analyze` | 患者（自分の発言） | `{status: sent｜awaiting_intent｜needs_review｜stopped, verification, timings}` | 発言者以外 403、処理中・処理済み 409、二重送信 409（2つ目は取り消し）、Gemini の失敗 502（status error・原文は残る） |
+| POST | `/translate` | 医師（自分の発言） | 同上 | 同上 |
+| POST | `/intent` | 発言者 | 本人の意味で訳し直し、照合して送る | AWAITING 以外 409、選択肢が無い・説明が空 400 |
+| POST | `/review` | 発言者 | `send_unverified` → 送る（`gate.override = speaker_ack`）／`rephrase` → 取り消し（`original` を返す） | NEEDS_REVIEW 以外 409 |
+| POST | `/cancel` | 発言者 | 取り消し（`original` を返す）。解析が後から終わっても送らない | 送信済み 409 |
+| POST | `/reveal` | 医師 | 患者の未着の発言の原文（未検証）。見たことを記録 | 届いた発言 400、患者 403 |
+| POST | `/issue/update` | 医師 | 未解決事項の状態 | 閉じた事項の保留・できない遷移 409、無い事項 404 |
+| POST | `/teachback/start` | 医師 | `{messageId}`。`previousId`（再説明の前の理解の確認）を渡すと、確認済みにしたとき前の相違も解決 | |
+| POST | `/clarify/send` | 医師 | `issueId` を渡すと未解決事項を「確認中」にし、答えが届くと「回答あり」 | |
+
+メッセージの `gate`: `state` `history[]` `run_id` `source_hash` `intent {state, decided_by, interpretations[], question_speaker, frame, confirmed}`
+`verification {status, issues[{type, strength, layer, detail, detail_speaker?}], failures}` `draft {translation, back_translation}` `attempts[]` `override` `revealed[]` `timings`。
+`translation` は SENT になったときにだけ書く。session の `audit {issues[], memory[], seq}` は Conversation Auditor（サーバーだけが書く）。
+
+## 確認候補と理解の確認（前回、2026-11-09 の 1 回目）
 
 ```
 患者の発言:

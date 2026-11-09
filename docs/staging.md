@@ -1,6 +1,7 @@
 # ステージング（本番と分けた検証環境）
 
-`feature/unsaid-clinical-meaning` を、本番（main の画面・API・データ）に触れずに動かすための手順。**まだ実行していない**（作業環境に gcloud / Firebase CLI の認証が無かった）。
+`feature/unsaid-clinical-meaning`（UNSAID 2.0）を、本番（main の画面・API・データ）に触れずに動かすための手順。
+**まだ実行していない**（作業環境に gcloud / Firebase CLI の認証が無かった）。本番のリソースを上書きするコマンドは無い。
 
 | | 本番（そのまま） | ステージング |
 |---|---|---|
@@ -26,16 +27,27 @@ firebase deploy --config firebase.staging.json --only firestore:staging --projec
 ```
 
 `firebase.staging.json` には `staging` データベースしか書いていないので、`(default)` のルールは変わらない。
-（このブランチの `firestore.rules` は以前の画面の書き方もすべて通すので、仮に `(default)` に公開しても main の画面は壊れない。ただし本番の設定は変えないこと。）
+**このブランチの `firestore.rules` を `(default)` に公開してはいけない。** Safety Gate を迂回できないよう、端末が `status: sent` を書くことを禁止したので、
+以前の画面（main）では患者が送れなくなる。本番に入れるときは、新しい画面とルールを同時に切り替える。
+
+公開する前に、本物のルールエンジンでルールを確かめられる（Java 11 以上と firebase-tools が要る）:
+
+```powershell
+npm i --no-save firebase-tools@14 @firebase/rules-unit-testing@4 firebase@10
+npm run test:rules
+```
 
 ## 3. API（Cloud Run の別サービス）
 
 ```powershell
-gcloud run deploy unsaid-api-staging --source . --region asia-northeast1 --service-account unsaid-api@unsaid-devfest.iam.gserviceaccount.com --allow-unauthenticated --memory 512Mi --timeout 120 --max-instances 2 --set-env-vars FIRESTORE_DATABASE=staging,FALLBACK_MODEL=gemini-3.5-flash
+gcloud run deploy unsaid-api-staging --source . --region asia-northeast1 --service-account unsaid-api@unsaid-devfest.iam.gserviceaccount.com --allow-unauthenticated --memory 512Mi --timeout 120 --max-instances 2 --set-env-vars FIRESTORE_DATABASE=staging,FALLBACK_MODEL=gemini-3.5-flash,TRANSLATION_RETRIES=1
 ```
 
 - URL は `https://unsaid-api-staging-799163399675.asia-northeast1.run.app` になる（`web/firebase-config.js` に書いた値）。違ったら書き換える。
 - 本番のサービス `unsaid-api` には触れない。サービスアカウントは同じ（Vertex AI・Firestore・Speech-to-Text の権限）。
+- `--timeout 120` は、意図の解析・照合・訳し直し・再照合まで含めた最悪の時間（`LOCK_SEC` 110 秒）より長くする。
+- 役割ごとのモデルは `SOURCE_MODEL` `VERIFY_MODEL` `AUDIT_MODEL` `TRANSLATE_MODEL` で替えられる（既定はすべて `gemini-3.8-flash`）。
+  照合を軽いモデルにするのは、`eval/compare.py --live` で精度が落ちないと確かめてから。
 - `FALLBACK_MODEL` は混雑時の予備。`thinking_level=low` に対応したモデルを選ぶ（2026-11 時点の Vertex AI の資料で `gemini-3.5-flash` は LOW に対応）。
 
 ## 4. 画面（Hosting のプレビューチャンネル）
@@ -51,7 +63,8 @@ firebase hosting:channel:deploy clinical-meaning --expires 7d --project unsaid-d
 
 ```powershell
 python smoke.py --api https://unsaid-api-staging-799163399675.asia-northeast1.run.app --key <apiKey> --database staging --lang zh-CN --text "今天在车站突然觉得头晕，眼前发黑，差点晕倒。" --restatement "明天再来就可以了，是吗？"
-python eval/compare.py --live
+python eval/compare.py --live --pivot
+python devtools/browser_check.py --out shots   # （BASE を書き換えればプレビューチャンネルにも使える）
 ```
 
 ## 片付け

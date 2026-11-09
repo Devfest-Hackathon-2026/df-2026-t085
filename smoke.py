@@ -129,9 +129,30 @@ def call(api, path, sid, mid, token, step, **extra):
     return out
 
 
+def settle(a, sid, mid, token, res, who):
+    """UNSAID 2.0 の Safety Gate: 意図の確認待ちなら最初の意味を選び、照合の確認待ちなら内容を表示して「未検証として送る」。"""
+    st = res.get("status")
+    if st == "awaiting_intent":
+        g = doc_get(f"sessions/{sid}/messages/{mid}", token)["gate"]["intent"]
+        print(f"       意図の確認: {g['question_speaker']}  候補: {[i['meaning_speaker'] for i in g['interpretations']]}")
+        choice = g["interpretations"][0]["id"] if g["interpretations"] else "free_text"
+        res = call(a.api, "/intent", sid, mid, token, f"{who}が意味を選ぶ", choice=choice, text=a.text)
+        st = res.get("status")
+    if st == "needs_review":
+        v = doc_get(f"sessions/{sid}/messages/{mid}", token)["gate"]["verification"]
+        print(f"       照合: {v['status']}  {[i.get('detail') for i in v['issues'] if i['strength'] == 'strong']}")
+        res = call(a.api, "/review", sid, mid, token, f"{who}が「未検証として送る」", action="send_unverified")
+        st = res.get("status")
+    m = doc_get(f"sessions/{sid}/messages/{mid}", token)
+    must(m["status"] == "sent", f"Safety Gate を通って送信済み（実際: {m['status']}）")
+    g = m.get("gate") or {}
+    print(f"       意図: {(g.get('intent') or {}).get('state')}  照合: {(g.get('verification') or {}).get('status')}"
+          f"  訳し直し: {len(g.get('attempts', [])) - 1}  時間: {g.get('timings')}")
+    return m
+
+
 def doctor_mode_flow(a, sid, mid, pt, dt):
-    """医師が選ぶ流れ: 送信 → 問診メモ・確認候補 → 医師が確認質問を送る → 患者が選択肢で答える → 情報の状態。"""
-    call(a.api, "/send", sid, mid, pt, "患者が送信（/send）")
+    """医師が選ぶ流れ: 問診メモ・確認候補 → 医師が確認質問を送る → 患者が選択肢で答える → 情報の状態。"""
     for _ in range(20):  # 意味の解析は翻訳の後に届く
         m = doc_get(f"sessions/{sid}/messages/{mid}", dt)
         if m.get("meaning"):
@@ -176,8 +197,7 @@ def teachback_flow(a, sid, did, pt, dt):
     doc_create(f"sessions/{sid}/messages", aid, {"from": "patient", "original": a.restatement, "status": "analyzing",
                                                  "replyTo": q["messageId"], "answer": {"type": "free_text"}}, pt,
                f"患者が言い直す: {a.restatement}")
-    call(a.api, "/analyze", sid, aid, pt, "/analyze（言い直し）")
-    call(a.api, "/send", sid, aid, pt, "患者が送信")
+    settle(a, sid, aid, pt, call(a.api, "/analyze", sid, aid, pt, "/analyze（言い直し）"), "患者")
     tb = doc_get(f"sessions/{sid}/messages/{q['messageId']}", dt)["teachback"]
     r = tb.get("result") or {}
     print(f"       判定（AI）: {r.get('overall')}  状態: {tb['status']}")
@@ -210,8 +230,10 @@ def main():
     mid = "p-" + uuid.uuid4().hex[:8]
     doc_create(f"sessions/{sid}/messages", mid, {"from": "patient", "original": a.text, "status": "analyzing"}, pt)
     res = call(a.api, "/analyze", sid, mid, pt, "/analyze")
-    doctor_mode = "meaning" in res  # 医師が選ぶ流れ（CLARIFY_MODE=doctor）の API は meaning を返す
-    m = doc_get(f"sessions/{sid}/messages/{mid}", pt)
+    # 2.0（Safety Gate）は status を返す。前回の医師が選ぶ流れは meaning、従来の流れは clarification を返す
+    gated = res.get("status") in ("sent", "awaiting_intent", "needs_review")
+    doctor_mode = gated or "meaning" in res
+    m = settle(a, sid, mid, pt, res, "患者") if gated else doc_get(f"sessions/{sid}/messages/{mid}", pt)
     print(f"       status={m['status']}  facts={[f['doctor_gloss'] for f in m.get('facts', [])]}")
 
     if m["status"] == "clarifying":
@@ -224,13 +246,16 @@ def main():
         call(a.api, "/translate", sid, mid, pt, "/translate")
         m = doc_get(f"sessions/{sid}/messages/{mid}", pt)
 
-    must(m["status"] == "confirmed", f"status が confirmed（実際: {m['status']}）")
+    must(m["status"] == ("sent" if gated else "confirmed"), f"status（実際: {m['status']}）")
     tr = m["translation"]
     print(f"       医師への訳: {tr['text']}")
     print(f"       逆翻訳:     {tr['back_translation']}")
     if tr.get("note"):
         print(f"       注意:       {tr['note']}")
-    if doctor_mode:
+    if gated:
+        doctor_mode_flow(a, sid, mid, pt, dt)
+    elif doctor_mode:
+        call(a.api, "/send", sid, mid, pt, "患者が送信（/send）")
         doctor_mode_flow(a, sid, mid, pt, dt)
     else:
         doc_patch(f"sessions/{sid}/messages/{mid}", {"status": "sent"}, ["status"], pt, "患者が送信")
@@ -239,8 +264,8 @@ def main():
     print("3. 医師の発言")
     mid = "d-" + uuid.uuid4().hex[:8]
     doc_create(f"sessions/{sid}/messages", mid, {"from": "doctor", "original": a.doctor, "status": "analyzing"}, dt)
-    call(a.api, "/translate", sid, mid, dt, "/translate")
-    m = doc_get(f"sessions/{sid}/messages/{mid}", pt)
+    res = call(a.api, "/translate", sid, mid, dt, "/translate")
+    m = settle(a, sid, mid, dt, res, "医師") if gated else doc_get(f"sessions/{sid}/messages/{mid}", pt)
     must(m["status"] == "sent", f"status が sent（実際: {m['status']}）")
     print(f"       患者への訳: {m['translation']['text']}")
     if doctor_mode:
@@ -257,6 +282,13 @@ def main():
                                                   "kind": "clarify"}, pt, "患者は確認質問（kind）を作れない", expect=403)
     doc_create(f"sessions/{sid}/messages", "x4", {"from": "doctor", "original": "hi", "status": "analyzing",
                                                   "replyTo": "x"}, dt, "医師は患者の答え（replyTo）を作れない", expect=403)
+    if gated:
+        # Safety Gate を端末から迂回できない: 自分の発言を直接「送信済み」にできない
+        bid = "b-" + uuid.uuid4().hex[:8]
+        doc_create(f"sessions/{sid}/messages", bid, {"from": "patient", "original": "hi", "status": "analyzing"}, pt)
+        q = "updateMask.fieldPaths=status&currentDocument.exists=true"
+        code, _ = http("PATCH", f"{FS}/sessions/{sid}/messages/{bid}?{q}", fields({"status": "sent"}), pt)
+        must(code == 403, "端末は自分の発言を直接「送信済み」にできない（Safety Gate を飛ばせない）", code)
     st, _ = sign_in(a.key, "部外者")
     code, _ = http("GET", f"{FS}/sessions/{sid}", token=st)
     must(code == 403, "メンバー以外は session を読めない", code)
