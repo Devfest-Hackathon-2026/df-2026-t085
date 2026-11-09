@@ -4,7 +4,7 @@
 > 本物の Gemini の評価は自分のプロジェクト（`kumu-devfest-2026`）で行った（`UNSAID_VERTEX_PROJECT`、下の「B」）。
 > ステージングをどちらで作るかは、チームで決める（A: チームのプロジェクト / B: 自分のプロジェクト）。
 
-`feature/unsaid-clinical-meaning`（UNSAID 2.0）を、本番（main の画面・API・データ）に触れずに動かすための手順。
+`feature/unsaid-clinical-meaning`（Kumu 2.0）を、本番（main の画面・API・データ）に触れずに動かすための手順。
 **まだ実行していない**（作業環境に gcloud / Firebase CLI の認証が無かった）。本番のリソースを上書きするコマンドは無い。
 
 | | 本番（そのまま） | ステージング |

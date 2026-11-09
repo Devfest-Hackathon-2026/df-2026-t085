@@ -1,5 +1,5 @@
 rules_version = '2';
-// UNSAID の Firestore ルール。Gemini の結果（facts / clarification の中身 / translation / error / lockedUntil）は
+// Kumu の Firestore ルール。Gemini の結果（facts / clarification の中身 / translation / error / lockedUntil）は
 // Cloud Run（Admin SDK、ルールの対象外）だけが書く。端末が書けるのは下の決めた項目だけ。
 //
 // 役割: session を作った人（members[0]）が医師、QR で参加した人（members[1]）が患者。

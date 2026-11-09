@@ -1,4 +1,4 @@
-# UNSAID API（Cloud Run）と画面側の約束
+# Kumu API（Cloud Run）と画面側の約束
 
 画面（Yusei）が知っておくことは「Firestore に発言を作る → その id で API を呼ぶ → あとは onSnapshot で待つ」だけ。
 API のレスポンスを使わなくても、結果は同じメッセージに書き戻されるので画面は勝手に更新される。
@@ -7,7 +7,7 @@ API のレスポンスを使わなくても、結果は同じメッセージに�
 > 下の「医師が選ぶ流れ」が今の約束。その後ろの節は従来の流れ（`CLARIFY_MODE=patient`）として残している。
 > データの形と状態遷移は [ARCHITECTURE.md](../ARCHITECTURE.md)、判断の理由は [DESIGN_DECISIONS.md](../DESIGN_DECISIONS.md)。
 
-## UNSAID 2.0: Safety Gate を通る送信（既定・2026-11-09）
+## Kumu 2.0: Safety Gate を通る送信（既定・2026-11-09）
 
 端末がするのは「発言を作る（＝送信操作）」と、その id で API を呼ぶことだけ。**`status: sent` を書けるのはサーバーだけ**（firestore.rules）。
 医師の発言も患者の発言も同じ流れ（[ARCHITECTURE.md](../ARCHITECTURE.md) の 3・4）。

@@ -1,4 +1,4 @@
-# 比較評価: A 通常の翻訳 / B ＋意図の解析 / C ＋Semantic Bridge・検証 / D UNSAID 完全版
+# 比較評価: A 通常の翻訳 / B ＋意図の解析 / C ＋Semantic Bridge・検証 / D Kumu 完全版
 
 - 実行: 2026-11-10 05:23 JST（本物の Gemini: gemini-3.8-flash（役割ごと: source=gemini-3.8-flash, verify=gemini-3.8-flash, audit=gemini-3.8-flash））
 - 症例: 意図 25・医学的な曖昧さ 20・否定/数量/日時/単位 20・説明不足 20・理解の相違 15・teach-back 8（計 108、すべて架空）。失敗した症例 0 件

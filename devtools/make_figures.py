@@ -62,8 +62,8 @@ CODE = lambda x, y: badge(x, y, "コード", C["accent_soft"], C["accent"])  # n
 
 # ───────────── 1. 技術図 ─────────────
 def architecture():
-    b = [DEFS, text(80, 92, "UNSAID の仕組み — 訳す前に意味を確かめ、確かめてから届ける", 40, 700),
-         text(80, 140, "UNSAID Semantic Safety Architecture（USSA）。発言ごとに次の順で処理する（医師→患者・患者→医師で同じ）", 22, 400, C["sub"])]
+    b = [DEFS, text(80, 92, "Kumu の仕組み — 訳す前に意味を確かめ、確かめてから届ける", 40, 700),
+         text(80, 140, "Unified Semantic Safety Architecture（USSA）。発言ごとに次の順で処理する（医師→患者・患者→医師で同じ）", 22, 400, C["sub"])]
     # 1 入力
     b += [box(80, 200, 300, 250, C["soft"]), text(105, 245, "患者・医師", 28, 700),
           lines(105, 290, ["患者: スマホ（中国語など）", "医師: PC（日本語）"], 20, fill=C["sub"]),
@@ -155,9 +155,9 @@ def intent_context():
     rows = [("ja-help", "立ち上がるのを手伝いましょうか？", "断る"), ("ja-wait", "お待たせしてすみません。", "気にしないで"),
             ("ja-continue", "このまま診察を続けてもいいですか？", "同意"), ("ja-injection", "痛み止めの注射をしましょうか？", "決まらない")]
     b = [text(80, 92, "「大丈夫です」— 同じ言葉でも、文脈で意味が変わる", 40, 700),
-         text(80, 140, "患者の「大丈夫です。」を英語の医師に。A は文脈を見ない通常の翻訳、UNSAID は直前の会話から意図を解析する（本物の Gemini）", 22, 400, C["sub"]),
+         text(80, 140, "患者の「大丈夫です。」を英語の医師に。A は文脈を見ない通常の翻訳、Kumu は直前の会話から意図を解析する（本物の Gemini）", 22, 400, C["sub"]),
          text(400, 205, "直前の医師の発言", 20, 700, C["faint"]), text(980, 205, "A 通常の翻訳", 20, 700, C["faint"]),
-         text(1380, 205, "UNSAID", 20, 700, C["accent"])]
+         text(1380, 205, "Kumu", 20, 700, C["accent"])]
     y = 230
     for cid, ctx, label in rows:
         r = rs[cid]
@@ -175,7 +175,7 @@ def intent_context():
     it = [r for r in cmp["intent"]]
     need = [r for r in it if r["expect"] == "clarify"]
     nn = [r for r in it if r["expect"] == "resolved"]
-    b += [text(80, 935, f"25 件の評価: 本人に聞くべき {len(need)} 件で、未確認のまま送った A {sum(not r['A']['asked'] for r in need)} 件 → UNSAID "
+    b += [text(80, 935, f"25 件の評価: 本人に聞くべき {len(need)} 件で、未確認のまま送った A {sum(not r['A']['asked'] for r in need)} 件 → Kumu "
                          f"{sum((not r['D']['asked']) and bool(r['D']['translation']) for r in need)} 件。文脈で決まる {len(nn)} 件で不要に聞いた "
                          f"{sum(r['D']['asked'] for r in nn)} 件", 21, 500),
           text(80, 975, f"実行: {cmp['meta']['started']}、{cmp['meta']['model']}・{cmp['meta']['location']}。症例は架空、正解は開発チームが事前に決めた", 18, 400, C["faint"])]
@@ -201,7 +201,7 @@ def render(pairs):
 
 
 # ───────────── 4. 評価の図（eval/compare_results.json・eval/live_verify_repeat.json から。分母と条件を必ず書く）─────────────
-METHODS = [("A", "通常の翻訳"), ("B", "＋意図の解析"), ("C", "＋意味の照合"), ("D", "UNSAID 完全版")]
+METHODS = [("A", "通常の翻訳"), ("B", "＋意図の解析"), ("C", "＋意味の照合"), ("D", "Kumu 完全版")]
 
 
 def _bar_chart(title, sub, values, denom, unit, note, better="少ないほど安全", fmt=None, colors=None):

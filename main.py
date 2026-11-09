@@ -1,4 +1,4 @@
-"""UNSAID の Cloud Run バックエンド（FastAPI）。
+"""Kumu の Cloud Run バックエンド（FastAPI）。
 
 クライアントがメッセージを Firestore に作った直後に、その id をこの API に渡す。
 サーバーは Firestore から本文と言語を読み直して Gemini を呼び、結果を同じメッセージに書き戻す。
@@ -88,7 +88,7 @@ async def lifespan(app):
     yield
 
 
-app = FastAPI(title="UNSAID API", lifespan=lifespan)
+app = FastAPI(title="Kumu API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,

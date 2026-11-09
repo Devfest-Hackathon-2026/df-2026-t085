@@ -1,4 +1,4 @@
-"""UNSAID Semantic Safety Architecture（USSA）のうち、Gemini にも Firestore にも依存しない部分。
+"""Unified Semantic Safety Architecture（USSA）のうち、Gemini にも Firestore にも依存しない部分。
 
   Source Agent の検証    発話意図（RESOLVED / CLARIFICATION_REQUIRED / UNRESOLVED / USER_CONFIRMED）と、原文の意味の枠
   Semantic Bridge        言語に依存しない意味の枠（frame）の検証と、原文の枠と訳文の枠の比較

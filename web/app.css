@@ -1,4 +1,4 @@
-/* UNSAID 本番画面（patient.html / doctor.html）の共通の見た目。UI 案B v2（情報は最小限）。 */
+/* Kumu 本番画面（patient.html / doctor.html）の共通の見た目。UI 案B v2（情報は最小限）。 */
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap");
 /* 簡体字は Noto Sans JP に無い字がある（头晕・刚 など）。中国語の文には Noto Sans SC を使う（中国語フォントの無い PC でも欠けない）。
    Google Fonts は使う字の分だけ読み込む */

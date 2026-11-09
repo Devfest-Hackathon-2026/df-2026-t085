@@ -25,7 +25,7 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregi
 Cloud Run が Gemini（Vertex AI）と Firestore を使うための「ロボット用アカウント」。必要な権限だけを付ける。
 
 ```powershell
-gcloud iam service-accounts create unsaid-api --display-name "UNSAID API"
+gcloud iam service-accounts create unsaid-api --display-name "Kumu API"
 
 gcloud projects add-iam-policy-binding unsaid-devfest --member "serviceAccount:unsaid-api@unsaid-devfest.iam.gserviceaccount.com" --role roles/aiplatform.user
 

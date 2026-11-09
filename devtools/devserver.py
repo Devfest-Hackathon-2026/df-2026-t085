@@ -73,7 +73,7 @@ def uid_of(authorization):
 
 main.app.dependency_overrides[main.current_uid] = lambda authorization=Header(default=""): uid_of(authorization)
 
-app = FastAPI(title="UNSAID local dev")
+app = FastAPI(title="Kumu local dev")
 app.mount("/api", main.app)
 
 
@@ -235,5 +235,5 @@ if __name__ == "__main__":
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--host", default="127.0.0.1")
     a = ap.parse_args()
-    print(f"UNSAID local dev: http://localhost:{a.port}/doctor.html  （偽の AI・メモリ上のデータ。本番には触れません）")
+    print(f"Kumu local dev: http://localhost:{a.port}/doctor.html  （偽の AI・メモリ上のデータ。本番には触れません）")
     uvicorn.run(app, host=a.host, port=a.port, log_level="warning")

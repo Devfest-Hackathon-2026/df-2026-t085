@@ -172,7 +172,7 @@ export function karteText(msgs, session, today = new Date(), audit = session?.au
   const tbs = teachbacks(msgs);
   const langName = { en: "英語", "zh-CN": "中国語", vi: "ベトナム語" }[session?.patientLang] ?? session?.patientLang ?? "";
   if (!memo.count && !tbs.size) return "";
-  const L = [`【問診記録（UNSAID）】${langName}話者・${today.toLocaleDateString("ja-JP")}`,
+  const L = [`【問診記録（Kumu）】${langName}話者・${today.toLocaleDateString("ja-JP")}`,
     "※患者の申告を機械翻訳と AI で整理したもの（診断ではない）。［医］医師確認済み［患］確認質問への患者回答［未］未確認［要修正］医師が要修正とした項目［要再確認］医師の判断の後に患者の答えが変わった項目。印なしは AI 抽出（医師未確認）。"];
   const chief = memo.symptoms.filter((s) => s.chief);
   if (memo.symptoms.length) {

@@ -1,9 +1,9 @@
-"""UNSAID 2.0 の比較評価: 同じ 100 件の模擬症例（eval/ussa_cases.py）で、4 つの方式を比べる。
+"""Kumu 2.0 の比較評価: 同じ 100 件の模擬症例（eval/ussa_cases.py）で、4 つの方式を比べる。
 
   A  通常の直接翻訳（文脈なし）
   B  直接翻訳＋発話意図の解析（Source Agent・直前の会話を文脈に）
   C  B＋Semantic Bridge＋Verification Engine（独立した照合・訳し直し・照合で相違が残れば発言者の確認）
-  D  UNSAID 完全版（C＋Meaning Engine の確認候補＋Conversation Auditor＋医師・発言者の判断）
+  D  Kumu 完全版（C＋Meaning Engine の確認候補＋Conversation Auditor＋医師・発言者の判断）
   E  （比較用）英語を経由する翻訳。否定・数量・日時の保持だけを見る
 
   python eval/compare.py --live    本物の Gemini（Vertex AI）。gcloud auth application-default login と Vertex AI の権限が要る。
@@ -264,7 +264,7 @@ def report(R, mode, started, pivot):
     errs = sum("error" in r for k in R for r in R[k])
     neg = [r for r in pr if r["error_type"] == "negation" and "injected" in r]
     inj = [r for r in pr if "injected" in r]
-    L = ["# 比較評価: A 通常の翻訳 / B ＋意図の解析 / C ＋Semantic Bridge・検証 / D UNSAID 完全版", "",
+    L = ["# 比較評価: A 通常の翻訳 / B ＋意図の解析 / C ＋Semantic Bridge・検証 / D Kumu 完全版", "",
          f"- 実行: {started}（{'本物の Gemini: ' + unsaid_ai.MODEL + '（役割ごと: source=' + unsaid_ai.SOURCE_MODEL + ', verify=' + unsaid_ai.VERIFY_MODEL + ', audit=' + unsaid_ai.AUDIT_MODEL + '）' if mode == 'live' else '偽の AI（仕組みの確認だけ。数値は性能ではない）'}）",
          f"- 症例: 意図 {len(R['intent'])}・医学的な曖昧さ {len(R['medical'])}・否定/数量/日時/単位 {len(R['precision'])}・"
          f"説明不足 {len(R['explanation'])}・理解の相違 {len(R['understanding'])}・teach-back {len(R['teachback'])}"

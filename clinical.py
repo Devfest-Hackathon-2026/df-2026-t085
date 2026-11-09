@@ -1,4 +1,4 @@
-"""UNSAID の「意味」と「確認」の状態（Meaning Engine の検証・確認候補・状態遷移・理解確認）。
+"""Kumu の「意味」と「確認」の状態（Meaning Engine の検証・確認候補・状態遷移・理解確認）。
 
 Gemini も Firestore も使わない純粋な関数だけを置く（main.py が呼ぶ。テストは test_clinical.py）。
 

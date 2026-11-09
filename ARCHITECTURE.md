@@ -1,4 +1,4 @@
-# UNSAID のアーキテクチャ — UNSAID Semantic Safety Architecture（USSA）
+# Kumu のアーキテクチャ — Unified Semantic Safety Architecture（USSA）
 
 言語の壁がある診察で起こる「伝わったつもり」（音声認識の誤り・発話意図の曖昧さ・訳での意味の欠落・説明不足・理解の不一致・会話全体の矛盾）を、
 発言ごとと会話全体の両方で見つけ、確認で解消できるものは解消し、解消できないものは**確定させずに人に見せる**。

@@ -130,7 +130,7 @@ def call(api, path, sid, mid, token, step, **extra):
 
 
 def settle(a, sid, mid, token, res, who):
-    """UNSAID 2.0 の Safety Gate: 意図の確認待ちなら最初の意味を選び、照合の確認待ちなら内容を表示して「未検証として送る」。"""
+    """Kumu 2.0 の Safety Gate: 意図の確認待ちなら最初の意味を選び、照合の確認待ちなら内容を表示して「未検証として送る」。"""
     st = res.get("status")
     if st == "awaiting_intent":
         g = doc_get(f"sessions/{sid}/messages/{mid}", token)["gate"]["intent"]

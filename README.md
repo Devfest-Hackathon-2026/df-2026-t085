@@ -1,4 +1,4 @@
-# UNSAID
+# Kumu
 
 **言葉を訳すだけでなく、診察で起こる「伝わったつもり」を防ぐ。**
 *Beyond translation. Toward mutual understanding.*（カテゴリ：医療・福祉）
@@ -7,15 +7,15 @@
 患者の「没事」は「注射は要らない」なのか「お願いします」なのか。訳から「〜しないで」が落ちていないか。
 医師の「今日は結果が出るまで帰らないで」が「明日また来ればいい」と伝わっていないか。
 
-UNSAID は Gemini と、プログラムで作った安全装置（Safety Gate）で、こうしたずれを**送る前・届いた後・会話全体**で見つけます。
+Kumu は Gemini と、プログラムで作った安全装置（Safety Gate）で、こうしたずれを**送る前・届いた後・会話全体**で見つけます。
 確認で解消できるものは解消し、**解消できないものは確定させずに人に見せます**。診断はしません。
 
 - 画面（医師 PC）：https://unsaid-devfest.web.app/doctor.html （患者は QR をスマホで読むだけ）
 - この README の機能は `feature/unsaid-clinical-meaning` ブランチにあり、上の本番（main）にはまだ載っていません。ステージングの手順は [docs/staging.md](docs/staging.md)。
 
-## 何をするか（UNSAID Semantic Safety Architecture）
+## 何をするか（Unified Semantic Safety Architecture）
 
-| 問題 | UNSAID がすること | 決めるのは |
+| 問題 | Kumu がすること | 決めるのは |
 |---|---|---|
 | 音声認識の誤り | 認識結果は入力欄に入るだけ。本人が確かめて直してから「送る」 | 発言者 |
 | 発話意図の曖昧さ | Source Agent が直前の会話から意図を解析。「痛みはありますか？→没事」は聞かずに「痛みはありません」。「注射しましょうか？→没事」のように取り違えると危ないときだけ、**発言者本人に**意味を選んでもらう | 発言者 |
@@ -98,4 +98,4 @@ python eval/compare.py --live --pivot              # 本物の Gemini で 4 方�
 
 ## チーム Xingularity
 
-DevFest GDGoC Japan Hackathon 2026 の作品です。デモの症例はすべて架空です。UNSAID は医療通訳の代わりになることを示したものではありません。
+DevFest GDGoC Japan Hackathon 2026 の作品です。デモの症例はすべて架空です。Kumu は医療通訳の代わりになることを示したものではありません。

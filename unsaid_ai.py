@@ -1,4 +1,4 @@
-"""UNSAID の Gemini 呼び出し（analyze / translate）。Cloud Run からもそのまま import して使う想定。"""
+"""Kumu の Gemini 呼び出し（analyze / translate）。Cloud Run からもそのまま import して使う想定。"""
 import difflib
 import json
 import os
