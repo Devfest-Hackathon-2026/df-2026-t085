@@ -83,6 +83,8 @@ gcloud firestore fields ttls update expireAt --collection-group=messages --enabl
 | `HEDGE_SEC` | `5` | Gemini がこの秒数で返らなければ同じ依頼をもう1本投げ、早い方を使う。`0` で使わない |
 | `MAX_CALLS_PER_SESSION` | `200` | 1つの問診で API を呼べる回数（/analyze・/translate・/transcribe の合計）。超えると 429 |
 | `TTL_HOURS` | `24` | `expireAt` を「最後に使ってから何時間後」にするか |
+| `GEMINI_MODEL` | `gemini-3.8-flash` | 使うモデル。比べ方は `eval/compare_models.py` |
+| `TRANSLATE_MODEL` | 空 | 翻訳だけ別のモデルにするとき。空なら `GEMINI_MODEL` |
 | `FALLBACK_MODEL` | 空 | 混雑（429）が続いたときの予備のモデル（下の「デモの日だけ」） |
 | `ANALYZE_MODE` | `split` | `single` で確認質問と facts を1回の呼び出しに戻す |
 | `ALLOWED_ORIGINS` | `*` | API を呼べる画面の URL（カンマ区切り） |
