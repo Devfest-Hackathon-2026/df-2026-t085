@@ -1,5 +1,8 @@
 """API の流れのテスト（Gemini と Firestore は偽物に差し替えるので、ネットもクレジットも使わない）。
 
+従来の「送信前に患者へ自動で1問だけ聞く」流れ（CLARIFY_MODE=patient）と、音声・診察終了・再試行のテスト。
+医師が確認候補を選ぶ新しい流れ（既定）は tests/ にある（pytest）。
+
 使い方: python test_server.py
 """
 import sys
@@ -103,6 +106,7 @@ store = {
     S + "/messages/m3": {"from": "doctor", "original": "1日3回飲んでください。", "status": "analyzing"},
 }
 main._db = FakeDB(store)
+main.CLARIFY_MODE = "patient"  # このファイルは従来の流れのテスト
 
 
 def fake_transact(m_ref, check):  # 本物はトランザクション。ここでは読んで、check が通れば書くだけ

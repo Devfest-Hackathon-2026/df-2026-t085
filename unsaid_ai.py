@@ -56,6 +56,24 @@ FIXED_OPTIONS = {
     "vi": {"unsure": "Tôi không giải thích được", "free_text": "Tôi sẽ tự viết"},
 }
 
+# 医師が送った確認質問に患者が付けられる固定の答え（モデルに作らせない）。医師画面には doctor の文言で出す
+ANSWER_FIXED = {
+    "ja": {"unsure": "分からない", "none": "どれでもない"},
+    "en": {"unsure": "I don't know", "none": "None of these"},
+    "zh-CN": {"unsure": "我不知道", "none": "都不是"},
+    "vi": {"unsure": "Tôi không biết", "none": "Không cái nào đúng"},
+}
+ANSWER_FIXED_DOCTOR = {"unsure": "（患者: 分からない）", "none": "（患者: どれにも当てはまらない）"}
+
+# 理解の確認（teach-back）の依頼文。毎回同じ文にしたいのでモデルに作らせない。
+# 「あなたが理解できたか」ではなく「私の説明が分かりやすかったか」と聞く（teach-back の基本。患者を試さない）
+TEACHBACK_PROMPT = {
+    "ja": "説明が伝わったか確かめたいので、理解した内容をご自分の言葉で教えてください。",
+    "en": "To make sure I explained it clearly, please tell me in your own words what you understood.",
+    "zh-CN": "为了确认我说明得清楚，请用你自己的话说一说你理解了什么。",
+    "vi": "Để chắc chắn tôi đã giải thích rõ, bạn hãy nói lại bằng lời của mình những gì bạn đã hiểu.",
+}
+
 _client = None
 _files = {}
 
@@ -239,28 +257,60 @@ def _snap_target(target, utterance):
     return snapped if len(snapped) >= 2 else target
 
 
-def translate(original, source_lang, target_lang, direction, clarification=None):
+def translate(original, source_lang, target_lang, direction, clarification=None, context=None):
     """確認後の翻訳。direction は "patient_to_doctor" か "doctor_to_patient"。
 
     clarification は {"target", "question", "answer_type": option|free_text|unsure, "answer"} か None。
+    context は医師の確認質問への答えのとき {"question_as_shown", "question"}（短い答えを訳せるように）か None。
     """
-    return _call(
-        "prompts/translate_system.txt",
-        "schemas/translate.json",
-        model=TRANSLATE_MODEL,
-        payload={
-            "direction": direction,
-            "source_lang": _lang(source_lang),
-            "target_lang": _lang(target_lang),
-            "original": original,
-            "clarification": clarification,
-        },
-    )
+    payload = {
+        "direction": direction,
+        "source_lang": _lang(source_lang),
+        "target_lang": _lang(target_lang),
+        "original": original,
+        "clarification": clarification,
+    }
+    if context:
+        payload["context"] = context
+    return _call("prompts/translate_system.txt", "schemas/translate.json", model=TRANSLATE_MODEL, payload=payload)
+
+
+def meaning(utterance, patient_lang, doctor_lang="ja", context=None, already_asked=None, pending_question=None):
+    """Meaning Engine: 患者の発言 → 診療に関わる情報（原文の根拠つき）・確認候補・確認質問への答えの解釈を1回で。
+
+    患者は待たない（翻訳と並列に投げ、医師が見るのは患者が送信した後）。出力の検証は clinical.build_meaning。
+    """
+    return _call("prompts/meaning_system.txt", "schemas/meaning.json", {
+        "patient_lang": _lang(patient_lang),
+        "doctor_lang": _lang(doctor_lang),
+        "utterance": utterance,
+        "context": context or [],
+        "already_asked": already_asked or [],
+        "pending_question": pending_question,
+    })
+
+
+def compare_understanding(explanation, explanation_as_shown, restatement, patient_lang, doctor_lang="ja"):
+    """理解の確認（teach-back）: 医師の説明と、患者が自分の言葉で言い直した内容を比べる。検証は clinical.build_teachback。"""
+    return _call("prompts/teachback_system.txt", "schemas/teachback.json", {
+        "doctor_lang": _lang(doctor_lang),
+        "patient_lang": _lang(patient_lang),
+        "explanation": explanation,
+        "explanation_as_shown": explanation_as_shown,
+        "restatement": restatement,
+    })
+
+
+def schema(name):
+    """サーバー側の検証に使う JSON スキーマ（Gemini に渡すものと同じファイル）。"""
+    return _load(f"schemas/{name}.json")
 
 
 def warm_up():
     """サーバー起動時に1回呼んで、最初の呼び出しが遅い問題をデモ前に済ませておく。"""
     try:
-        analyze("I have a headache.", "en")
+        f = submit(meaning, "I have a headache.", "en")
+        translate("I have a headache.", "en", "ja", "patient_to_doctor")
+        f.result()
     except Exception:
         pass

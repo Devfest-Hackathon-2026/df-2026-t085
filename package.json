@@ -1,4 +1,9 @@
 {
+  "type": "module",
+  "scripts": {
+    "test": "node --test web/",
+    "e2e": "node devtools/e2e.mjs"
+  },
   "dependencies": {
     "firebase": "^13.2.0"
   }

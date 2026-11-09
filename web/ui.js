@@ -10,7 +10,7 @@ export function h(tag, attrs = {}, ...children) {
     else if (k === "html") e.innerHTML = v;
     else e.setAttribute(k, v === true ? "" : v);
   }
-  for (const c of children.flat()) if (c != null && c !== false) e.append(c);
+  for (const c of children.flat(Infinity)) if (c != null && c !== false) e.append(c);
   return e;
 }
 

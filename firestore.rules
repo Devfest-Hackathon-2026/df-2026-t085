@@ -48,16 +48,31 @@ service cloud.firestore {
         allow read: if isMember(sessionId);
 
         // 発言を作る: 本文と from だけ。status は必ず analyzing から、createdAt はサーバーの時刻（並び順に使う）。
-        // from は自分の役割と同じでないといけない
+        // from は自分の役割と同じでないといけない。
+        // 患者だけは、医師の確認質問・理解の確認への答えとして replyTo（質問の id）と answer（{type, index?}）を付けられる。
+        // 質問が本当に医師の確認質問か・選択肢が合うかは API（main.py の _reply_target）が確かめる。
+        // 確認質問・理解の確認の発言そのもの（kind 付き）と、意味の解析・状態（meaning / teachback）はサーバーだけが書く。
+        // （以前の画面が使う形はそのまま通る。ルールを先に公開しても main の画面は壊れない）
         allow create: if isMember(sessionId)
-          && request.resource.data.keys().hasOnly(['from', 'original', 'status', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['from', 'original', 'status', 'createdAt', 'replyTo', 'answer'])
           && ((request.resource.data.from == 'doctor' && isDoctor(sessionId))
             || (request.resource.data.from == 'patient' && isPatient(sessionId)))
           && request.resource.data.status == 'analyzing'
           && request.resource.data.createdAt == request.time
           && request.resource.data.original is string
           && request.resource.data.original.size() > 0
-          && request.resource.data.original.size() <= 1000;
+          && request.resource.data.original.size() <= 1000
+          && (!('replyTo' in request.resource.data) || (request.resource.data.from == 'patient'
+            && request.resource.data.replyTo is string
+            && request.resource.data.replyTo.size() > 0 && request.resource.data.replyTo.size() <= 64))
+          && (!('answer' in request.resource.data) || (request.resource.data.from == 'patient'
+            && 'replyTo' in request.resource.data
+            && request.resource.data.answer is map
+            && request.resource.data.answer.keys().hasOnly(['type', 'index'])
+            && request.resource.data.answer.type in ['option', 'unsure', 'none', 'free_text']
+            && (!('index' in request.resource.data.answer)
+              || (request.resource.data.answer.index is int && request.resource.data.answer.index >= 0
+                && request.resource.data.answer.index < 4))));
 
         allow update: if isMember(sessionId) && (
           // 患者: 自分の発言の確認質問への回答（clarification.answer だけを書き換える）
@@ -65,7 +80,7 @@ service cloud.firestore {
             && resource.data.status in ['clarifying', 'error'] && onlyChanges(['clarification'])
             && request.resource.data.clarification.diff(resource.data.clarification).affectedKeys().hasOnly(['answer'])
             && request.resource.data.clarification.answer.type in ['option', 'free_text', 'unsure'])
-          // 患者: 自分の発言の逆翻訳を確認して送信
+          // 患者: 自分の発言の逆翻訳を確認して送信（今の画面は POST /send を使う。以前の画面のために残す）
           || (isPatient(sessionId) && resource.data.from == 'patient'
             && resource.data.status == 'confirmed' && request.resource.data.status == 'sent'
             && onlyChanges(['status', 'sentAt']))

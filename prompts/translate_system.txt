@@ -11,6 +11,11 @@ A JSON object:
   - question: what the patient was asked
   - answer_type: "option" (picked a choice), "free_text" (wrote their own answer), or "unsure" (said they cannot explain it)
   - answer: the patient's answer in source_lang ("" when answer_type is "unsure")
+- context: null, or (patient_to_doctor only) the doctor's question this utterance replies to:
+  {question_as_shown (source_lang), question (target_lang)}.
+  Use it only to make a short answer, a pronoun, or an omitted word understandable
+  (for example "Yes, spinning." after "Did things spin around you?" -> "はい、周りがぐるぐる回る感じです。").
+  Never add anything from the question that the patient did not affirm. Never translate the question itself.
 
 # Rules for both directions
 - Keep negation, uncertainty, numbers, units, timing, frequency, and dosage exactly.

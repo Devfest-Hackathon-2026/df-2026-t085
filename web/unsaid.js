@@ -88,13 +88,35 @@ export function watchSession(sid, cb, onError = console.error) {
   return onSnapshot(doc(db, "sessions", sid), (s) => cb(s.exists() ? { id: s.id, ...s.data() } : null), onError);
 }
 
-// 発言の一覧を古い順に。status / clarification / translation / facts が書き足されるたびに cb が呼ばれる。
-// facts は status が変わった少し後に届くので、「届いたら出す」書き方にする。戻り値を呼ぶと止まる
+// 発言の一覧を古い順に。status / clarification / translation / meaning が書き足されるたびに cb が呼ばれる。
+// meaning（問診メモ・確認候補）は status が変わった少し後に届くので、「届いたら出す」書き方にする。戻り値を呼ぶと止まる
 export function watchMessages(sid, cb, onError = console.error) {
   const q = query(collection(db, "sessions", sid, "messages"), orderBy("createdAt"));
-  return onSnapshot(q, (snap) => {
+  let first = true;
+  return onSnapshot(q, { includeMetadataChanges: true }, (snap) => {
+    setOnline(!snap.metadata.fromCache);
+    if (!first && !snap.docChanges().length) return; // 同期の状態（オンライン・書き込み済みか）だけが変わった
+    first = false;
     cb(snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) })));
   }, onError);
+}
+
+// つながっているか（端末の通信と Firestore の同期）。切れても Firestore は自分で再接続し、書いたものは後から届く。
+// cb(true | false) は状態が変わったときだけ呼ばれる
+let online = navigator.onLine;
+const onlineCbs = new Set();
+function setOnline(v) {
+  v = v && navigator.onLine;
+  if (v === online) return;
+  online = v;
+  onlineCbs.forEach((cb) => cb(v));
+}
+addEventListener("online", () => setOnline(true));
+addEventListener("offline", () => setOnline(false));
+export function watchConnection(cb) {
+  onlineCbs.add(cb);
+  cb(online);
+  return () => onlineCbs.delete(cb);
 }
 
 export class ApiError extends Error {
@@ -104,25 +126,39 @@ export class ApiError extends Error {
   }
 }
 
-async function callApi(path, sid, mid) {
+// API の待ち時間の上限。Gemini の再試行をすべて使い切っても返る長さ（サーバーの LOCK_SEC より短く）。
+// 超えたら諦めて「もう一度」を出す（発言は Firestore にあるので消えない）
+const API_TIMEOUT_MS = 45000;
+
+async function post(path, body, { allow409 = false } = {}) {
   const token = await (await login()).getIdToken();
-  const res = await fetch(API_URL + path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify(mid ? { sessionId: sid, messageId: mid } : { sessionId: sid }),
-  });
-  if (res.ok || res.status === 409) return; // 409 は二重押し。無視してよい
-  const body = await res.json().catch(() => ({}));
-  throw new ApiError(res.status, body.detail ?? res.statusText);
+  let res;
+  try {
+    res = await fetch(API_URL + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    });
+  } catch (e) {
+    throw new ApiError(0, e.name === "TimeoutError" ? "timeout" : "network");
+  }
+  if (allow409 && res.status === 409) return null; // 二重押し。無視してよい
+  const out = await res.json().catch(() => ({}));
+  if (res.ok) return out;
+  throw new ApiError(res.status, out.detail ?? res.statusText);
 }
+
+const callApi = (path, sid, mid) => post(path, mid ? { sessionId: sid, messageId: mid } : { sessionId: sid }, { allow409: true });
 
 // 発言する（from は "patient" / "doctor"）。吹き出しは addDoc の時点で watchMessages に出る。
 // await の後に画面を変えないこと（確認質問は onSnapshot の方が早く届く）
 // API の呼び出しだけが失敗したとき（発言はもうある）、エラーに e.messageId が付く。
 // その発言は画面で「もう一度」を出す（retry）。e.messageId が無ければ発言自体を作れていない
-export async function say(sid, from, text) {
+// reply = 医師の確認質問・理解の確認への答えのとき { replyTo: <質問の id>, answer: { type, index? } }（患者だけ）
+export async function say(sid, from, text, reply = null) {
   const ref = await addDoc(collection(db, "sessions", sid, "messages"), {
-    from, original: text, status: "analyzing", createdAt: serverTimestamp(),
+    from, original: text, status: "analyzing", createdAt: serverTimestamp(), ...(reply ?? {}),
   });
   await callApi(from === "patient" ? "/analyze" : "/translate", sid, ref.id).catch((e) => {
     e.messageId = ref.id;
@@ -141,8 +177,14 @@ export async function answer(sid, mid, type, text = "") {
   });
 }
 
-// 患者: 逆翻訳を見て「送信」（status confirmed のときだけ）
-export const send = (sid, mid) => updateDoc(msgRef(sid, mid), { status: "sent", sentAt: serverTimestamp() });
+// 患者: 医師の確認質問に答える。type は "option"（index = 選んだ選択肢の番号、text = その文字）/ "unsure" / "none" /
+// "free_text"（自分の言葉。逆翻訳を見てから送る）。理解の確認（teach-back）には free_text で答える
+export const reply = (sid, questionId, text, type = "free_text", index) =>
+  say(sid, "patient", text, { replyTo: questionId, answer: index == null ? { type } : { type, index } });
+
+// 患者: 逆翻訳を見て「送信」（status confirmed のときだけ）。サーバーが送信済みにして、
+// 確認質問・理解の確認への答えなら元の情報に結びつける
+export const send = (sid, mid) => callApi("/send", sid, mid);
 
 // 医師: 患者の発言を表示したら「受け取った」（status sent のときだけ）
 export const receive = (sid, mid) => updateDoc(msgRef(sid, mid), { status: "received", receivedAt: serverTimestamp() });
@@ -159,6 +201,22 @@ export function retry(sid, m) {
 export async function endSession(sid) {
   await callApi("/end", sid);
 }
+
+// ── 医師: 確認候補・情報の確認・理解の確認（すべてサーバーが状態を変える。端末は Firestore の結果を表示するだけ）──
+// 確認候補をそのまま送る: { messageId, candidateId }。編集して送る: + questionDoctor。自分で質問を書く: { questionDoctor, messageId?, factId? }
+export const sendQuestion = (sid, q) => post("/clarify/send", { sessionId: sid, ...q });
+// action: "hold"（保留）/ "dismiss"（無視）/ "restore"（戻す）
+export const updateCandidate = (sid, messageId, candidateId, action) =>
+  post("/clarify/update", { sessionId: sid, messageId, candidateId, action });
+// action: "confirm"（医師確認済み）/ "flag"（要修正）/ "reset"（取り消す）
+export const updateFact = (sid, messageId, factId, action) =>
+  post("/fact/update", { sessionId: sid, messageId, factId, action });
+// 医師の説明（messageId）について「理解を確認」
+export const startTeachback = (sid, messageId) => post("/teachback/start", { sessionId: sid, messageId });
+// action: "confirm"（医師が理解を確認した）/ "reexplain"（再説明が必要）
+export const resolveTeachback = (sid, messageId, action) =>
+  post("/teachback/resolve", { sessionId: sid, messageId, action });
+export const retryMeaning = (sid, messageId) => post("/meaning/retry", { sessionId: sid, messageId }, { allow409: true });
 
 // 音声 → 文字（Firestore には書かない）。返った text を入力欄に入れ、本人が確認してから say() する
 export async function transcribe(sid, speaker, wav) {

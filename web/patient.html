@@ -9,7 +9,8 @@
 </head>
 <body>
 <!-- 患者のスマホ（UI 案B v2）。医師 PC の QR から ?s=<session id> で開く。
-     1画面に1つのことだけ: 話す → （曖昧なら）確認質問 → 医師にこう伝わる → 送信。状態はすべて watchMessages から決める -->
+     1画面に1つのことだけ: 言語 → 同意 → 話す → 医師にこう伝わる → 送信。状態はすべて watchMessages から決める。
+     医師が確認質問・理解の確認を送ると、話す画面の医師の吹き出しに出る（選択肢で答えるか、いつもどおり話して答える） -->
 <main id="app"></main>
 <script type="module">
 import * as unsaid from "./unsaid.js";
@@ -29,6 +30,15 @@ const T = {
     listen: "Listen", ended: "The consultation has ended. Your conversation has been deleted.",
     memo: "My notes", memoSub: "What the doctor has received from you", memoEmpty: "Nothing sent yet.", close: "Close", back: "Back",
     kinds: { symptom: "Symptoms", onset: "Since when", frequency: "How often", severity: "How bad", medication: "Medicine", allergy: "Allergies", other: "Other" },
+    question: "The doctor asks", answerHint: "Choose one, or answer in your own words", answerPlaceholder: "Or type your answer",
+    tbTitle: "Checking understanding", tbHint: "Tap and say it in your own words", yourAnswer: "Your answer", change: "Change answer",
+    consentTitle: "Before you start", agree: "Agree and start",
+    consent: [
+      "This app uses AI (Google Gemini) to translate between you and the doctor.",
+      "AI can make mistakes. Before sending, you will see what the doctor will read.",
+      "The AI does not diagnose. The doctor decides, and may ask you to clarify.",
+      "Your conversation is deleted when the consultation ends. Your voice is not saved.",
+    ],
   },
   "zh-CN": {
     name: "中文（简体）", hint: "点一下，告诉医生哪里不舒服", listening: "正在听… 再点一下结束",
@@ -42,6 +52,15 @@ const T = {
     listen: "朗读", ended: "问诊已结束。对话内容已删除。",
     memo: "我的记录", memoSub: "医生已经收到的内容", memoEmpty: "还没有发送内容。", close: "关闭", back: "返回",
     kinds: { symptom: "症状", onset: "从什么时候开始", frequency: "频率", severity: "程度", medication: "药物", allergy: "过敏", other: "其他" },
+    question: "医生想确认", answerHint: "请选一个，或用你自己的话回答", answerPlaceholder: "也可以在这里输入回答",
+    tbTitle: "确认理解", tbHint: "点一下，用你自己的话说", yourAnswer: "你的回答", change: "修改回答",
+    consentTitle: "开始之前", agree: "同意并开始",
+    consent: [
+      "本应用使用 AI（Google Gemini）在你和医生之间翻译。",
+      "AI 可能会出错。发送前，你可以看到医生会读到的内容。",
+      "AI 不做诊断。由医生判断，医生可能会请你确认一些说法。",
+      "问诊结束后，对话内容会被删除。你的声音不会被保存。",
+    ],
   },
   vi: {
     name: "Tiếng Việt", hint: "Chạm và nói cho bác sĩ biết bạn bị gì", listening: "Đang nghe… chạm để dừng",
@@ -55,15 +74,27 @@ const T = {
     listen: "Nghe", ended: "Buổi khám đã kết thúc. Cuộc trò chuyện đã được xóa.",
     memo: "Ghi chú của tôi", memoSub: "Những gì bác sĩ đã nhận từ bạn", memoEmpty: "Chưa gửi gì.", close: "Đóng", back: "Quay lại",
     kinds: { symptom: "Triệu chứng", onset: "Từ khi nào", frequency: "Bao lâu một lần", severity: "Mức độ", medication: "Thuốc", allergy: "Dị ứng", other: "Khác" },
+    question: "Bác sĩ hỏi", answerHint: "Hãy chọn một, hoặc trả lời bằng lời của bạn", answerPlaceholder: "Hoặc gõ câu trả lời",
+    tbTitle: "Kiểm tra mức hiểu", tbHint: "Chạm và nói lại bằng lời của bạn", yourAnswer: "Câu trả lời của bạn", change: "Sửa câu trả lời",
+    consentTitle: "Trước khi bắt đầu", agree: "Đồng ý và bắt đầu",
+    consent: [
+      "Ứng dụng này dùng AI (Google Gemini) để dịch giữa bạn và bác sĩ.",
+      "AI có thể dịch sai. Trước khi gửi, bạn sẽ thấy bác sĩ sẽ đọc gì.",
+      "AI không chẩn đoán bệnh. Bác sĩ sẽ quyết định và có thể hỏi lại bạn.",
+      "Cuộc trò chuyện sẽ bị xóa khi buổi khám kết thúc. Giọng nói của bạn không được lưu.",
+    ],
   },
 };
 
 const app = document.getElementById("app");
 const sid = new URLSearchParams(location.search).get("s");
 const S = {
-  lang: null, msgs: [], draft: "", mic: "idle", busy: null, freeText: false, ended: false,
+  lang: null, msgs: [], draft: "", mic: "idle", busy: null, freeText: false, ended: false, online: true,
   dismissed: new Set(load("dismissed") ?? []),
+  pendingLang: null, // 言語を選んだ後、同意する前
+  reopen: null,      // 「回答を直す」で開き直した確認質問の id
 };
+const isQuestion = (m) => m.from === "doctor" && (m.kind === "clarify" || m.kind === "teachback");
 let t = T.en;
 let mic;
 let watch; // 待ちのまま止まった発言を見つける（ui.js）
@@ -92,7 +123,7 @@ function setLang(lang) {
 function view() {
   if (!sid) return { name: "nosession" };
   if (S.ended) return { name: "ended" };
-  if (!S.lang) return { name: "join" };
+  if (!S.lang) return { name: S.pendingLang ? "consent" : "join" };
   const mine = S.msgs.filter((m) => m.from === "patient");
   const last = mine.at(-1);
   const active = last && !["sent", "received"].includes(last.status) && !S.dismissed.has(last.id) ? last : null;
@@ -107,12 +138,19 @@ function view() {
   const lastSent = mine.filter((m) => ["sent", "received"].includes(m.status)).at(-1) ?? null;
   // 自分が最後に送った後の医師の発言をすべて見せる（続けて2つ聞かれても1つ目が消えないように）
   const after = lastSent ? S.msgs.indexOf(lastSent) : -1;
-  const doctors = S.msgs.filter((m, i) => i > after && m.from === "doctor" && ["sent", "received"].includes(m.status));
-  return { name: "speak", doctors, lastSent: doctors.length ? null : lastSent };
+  let doctors = S.msgs.filter((m, i) => i > after && m.from === "doctor" && ["sent", "received"].includes(m.status));
+  // 「回答を直す」: 答えた確認質問をもう一度開く（医師がその後に何も言っていないときだけ）
+  const reopened = !doctors.length && S.reopen && S.msgs.find((m) => m.id === S.reopen);
+  if (reopened) doctors = [reopened];
+  // 答える質問 = 医師の確認質問・理解の確認のうち一番新しいもの。話した言葉はその答えになる
+  const openQ = doctors.filter(isQuestion).at(-1) ?? null;
+  const q = lastSent?.replyTo && S.msgs.find((m) => m.id === lastSent.replyTo);
+  const answeredQ = !doctors.length && q?.kind === "clarify" ? q : null; // 「回答を直す」を出す
+  return { name: "speak", doctors, openQ, answeredQ, lastSent: doctors.length ? null : lastSent };
 }
 
 function keyOf(v) {
-  return JSON.stringify([canSpeak, memoItems().length, v.name, v.m?.id, v.m?.status, v.doctors?.map((d) => d.id).join(), v.lastSent?.id, v.lastSent?.status, S.mic, S.busy, S.freeText, S.lang]);
+  return JSON.stringify([canSpeak, memoItems().length, v.name, v.m?.id, v.m?.status, v.doctors?.map((d) => d.id).join(), v.lastSent?.id, v.lastSent?.status, S.mic, S.busy, S.freeText, S.lang, S.pendingLang, v.openQ?.id, S.reopen, S.online]);
 }
 
 function render(force = false) {
@@ -126,7 +164,8 @@ function render(force = false) {
 
 const steps = (n) => h("div", { class: "p-steps", "aria-hidden": "true" },
   [1, 2, 3].map((i) => h("span", { class: i <= n ? "on" : "" })));
-const top = (n) => h("div", { class: "p-top" }, n ? steps(n) : h("span"), h("span", { class: "dot", title: "connected" }));
+const dot = () => h("span", { class: "dot" + (S.online ? "" : " off"), title: S.online ? "connected" : "offline" });
+const top = (n) => h("div", { class: "p-top" }, n ? steps(n) : h("span"), dot());
 
 const screens = {
   ended: () => h("section", { class: "p-screen" }, h("div", { class: "p-center" }, h("p", {}, t.ended))),
@@ -138,10 +177,26 @@ const screens = {
     h("div", { class: "p-body" },
       h("div", { class: "p-question", lang: "mul" }, "Language · 语言 · Ngôn ngữ"),
       h("div", { class: "p-langs" }, unsaid.PATIENT_LANGS.map((l) =>
-        h("button", { class: "p-option", lang: l, disabled: S.busy === "join", onclick: () => join(l) }, T[l]?.name ?? l))))),
+        h("button", { class: "p-option", lang: l, disabled: S.busy === "join",
+          onclick: () => { S.pendingLang = l; render(true); } }, T[l]?.name ?? l))))),
+
+  // 使う前に、何に AI を使うか・記録がどうなるかを本人の言語で伝える（同意したら参加）
+  consent: () => {
+    const tt = T[S.pendingLang] ?? T.en;
+    return h("section", { class: "p-screen", lang: S.pendingLang },
+      top(0),
+      h("div", { class: "p-body" },
+        h("h1", { class: "p-consent-title" }, tt.consentTitle),
+        h("ul", { class: "p-consent" }, tt.consent.map((x) => h("li", {}, x)))),
+      h("div", { class: "p-spacer" }),
+      h("div", { class: "p-actions" },
+        h("button", { class: "btn-primary", disabled: S.busy === "join", onclick: () => join(S.pendingLang) }, tt.agree),
+        h("button", { class: "btn-link", onclick: () => { S.pendingLang = null; render(true); } }, tt.back)));
+  },
 
   speak: (v) => {
-    const ta = h("textarea", { id: "draft", rows: 2, placeholder: t.placeholder, "aria-label": t.placeholder,
+    const ph = v.openQ ? t.answerPlaceholder : t.placeholder;
+    const ta = h("textarea", { id: "draft", rows: 2, placeholder: ph, "aria-label": ph,
       oninput: (e) => { S.draft = e.target.value; nextBtn.disabled = !S.draft.trim(); } });
     ta.value = S.draft;
     const nextBtn = h("button", { onclick: say, disabled: !S.draft.trim() || S.busy === "say" }, t.next);
@@ -150,19 +205,19 @@ const screens = {
     return h("section", { class: "p-screen" },
       h("div", { class: "p-top" },
         n ? h("button", { class: "p-memo-btn", onclick: openMemo }, `${t.memo} (${n})`) : h("span"),
-        h("span", { class: "dot", title: "connected" })),
+        dot()),
       h("div", { class: "p-body" },
-        v.doctors.map((d, i) => h("div", { class: "p-doctor" + (i < v.doctors.length - 1 ? " old" : "") },
-          h("div", { class: "who" }, t.doctor, canSpeak && h("button", { class: "btn-link p-listen",
-            "aria-label": t.listen, onclick: () => speak(d.translation?.text) }, icon("volume-2"), t.listen)),
-          h("div", { class: "say" }, d.translation?.text ?? ""))),
+        v.doctors.map((d, i) => doctorCard(d, i < v.doctors.length - 1 && d !== v.openQ, d === v.openQ)),
         v.lastSent && h("div", { class: "p-status" },
-          icon(v.lastSent.status === "received" ? "check-check" : "check"), v.lastSent.status === "received" ? t.read : t.sent)),
+          icon(v.lastSent.status === "received" ? "check-check" : "check"), v.lastSent.status === "received" ? t.read : t.sent),
+        v.answeredQ && h("div", { class: "p-answered" }, `${t.yourAnswer}: ${v.lastSent.original}`,
+          h("button", { class: "btn-link", onclick: () => { S.reopen = v.answeredQ.id; render(true); } }, t.change))),
       h("div", { class: "p-spacer" }),
       h("div", { class: "p-speak" },
         h("button", { class: "mic" + (rec ? " recording" : ""), "aria-label": rec ? t.micStop : t.mic,
           disabled: S.mic === "transcribing", onclick: () => mic.toggle(), html: rec ? STOP_SVG : MIC_SVG }),
-        h("div", { class: "hint", "aria-live": "polite" }, rec ? t.listening : S.mic === "transcribing" ? t.converting : t.hint),
+        h("div", { class: "hint", "aria-live": "polite" }, rec ? t.listening : S.mic === "transcribing" ? t.converting
+          : v.openQ?.kind === "teachback" ? t.tbHint : v.openQ ? t.answerHint : t.hint),
         h("div", { class: "p-input" }, ta, nextBtn)));
   },
 
@@ -216,6 +271,26 @@ const screens = {
       h("button", { class: "btn-link", onclick: () => notRight(m) }, t.notRight))),
 };
 
+// 医師の吹き出し。確認質問なら選択肢と「分からない」「どれでもない」、理解の確認なら元の説明も出す
+function doctorCard(d, old, open) {
+  const listen = canSpeak && h("button", { class: "btn-link p-listen", "aria-label": t.listen,
+    onclick: () => speak(d.translation?.text) }, icon("volume-2"), t.listen);
+  const who = d.kind === "clarify" ? h("span", { class: "tag-q" }, t.question)
+    : d.kind === "teachback" ? h("span", { class: "tag-q" }, t.tbTitle) : t.doctor;
+  const exp = d.kind === "teachback" && S.msgs.find((m) => m.id === d.teachback.explanation_id);
+  const c = d.kind === "clarify" ? d.clarify : null;
+  const busy = S.busy === `q:${d.id}`;
+  return h("div", { class: "p-doctor" + (old ? " old" : "") },
+    h("div", { class: "who" }, who, listen),
+    exp && h("div", { class: "p-explain" }, exp.translation?.text ?? ""),
+    h("div", { class: "say" }, d.translation?.text ?? ""),
+    open && c && c.options?.length > 0 && h("div", { class: "p-options" }, c.options.map((o, i) =>
+      h("button", { class: "p-option", disabled: busy, onclick: () => answerQ(d, "option", o, i) }, o))),
+    open && c && h("div", { class: "p-links" },
+      h("button", { class: "btn-link", disabled: busy, onclick: () => answerQ(d, "unsure", c.fixed?.unsure) }, c.fixed?.unsure ?? "?"),
+      c.options?.length > 0 && h("button", { class: "btn-link", disabled: busy,
+        onclick: () => answerQ(d, "none", c.fixed?.none) }, c.fixed?.none ?? "—")));
+}
 
 // ── 自分のメモ（医師に届いた内容を、自分の言語・自分の言い方で見返す）──
 // 医師画面の問診メモと同じ facts から作る。確かめた語は自分の答えに置き換える。診断の言葉は足さない
@@ -279,16 +354,29 @@ async function join(lang) {
 
 async function say() {
   const text = S.draft.trim();
-  if (!text) return;
-  S.busy = "say"; render(true);
+  if (!text || S.busy === "say") return;
+  const q = view().openQ; // 医師の質問が開いていれば、話した言葉はその答え
+  S.busy = "say"; S.reopen = null; render(true);
   try {
-    // 吹き出しは addDoc の時点で onSnapshot に出る。確認質問も onSnapshot の方が先に届く
-    const p = unsaid.say(sid, "patient", text);
+    // 吹き出しは addDoc の時点で onSnapshot に出る。翻訳も onSnapshot の方が先に届く
+    const p = q ? unsaid.reply(sid, q.id, text, "free_text") : unsaid.say(sid, "patient", text);
     S.draft = "";
     await p;
   } catch (e) {
     // 発言はできたが API に届かなかった: その発言に「もう一度」を出す。発言自体が無ければ文字を入力欄に戻す
     if (e.messageId) watch.fail(e.messageId); else S.draft = text;
+    fail(e);
+    return;
+  }
+  S.busy = null; render();
+}
+
+// 医師の確認質問に選択肢・「分からない」・「どれでもない」で答える（訳はもうあるので、そのまま医師に届く）
+async function answerQ(q, type, text, index) {
+  if (S.busy) return;
+  S.busy = `q:${q.id}`; S.reopen = null; render(true);
+  try { await unsaid.reply(sid, q.id, text ?? "", type, index); } catch (e) {
+    if (e.messageId) watch.fail(e.messageId);
     fail(e);
     return;
   }
@@ -328,6 +416,8 @@ function notRight(m) {
 
 async function start(lang) {
   setLang(lang);
+  S.pendingLang = null;
+  unsaid.watchConnection((on) => { S.online = on; render(); });
   watch = stuckWatch(() => render());
   mic = micController({
     Recorder: unsaid.Recorder,
