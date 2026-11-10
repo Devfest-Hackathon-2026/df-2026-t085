@@ -55,12 +55,37 @@ let input; // 医師の入力欄（再説明の文を入れるため）
 
 const fail = (e) => { if (S.ending) return; console.error(e); toast("失敗しました: " + (e?.message ?? e)); };
 
+// ── 医師のログイン（メール＋パスワード）。患者はログインなし ──
+function loginScreen() {
+  const email = h("input", { type: "email", autocomplete: "username", placeholder: "メールアドレス", required: true });
+  const pw = h("input", { type: "password", autocomplete: "current-password", placeholder: "パスワード", required: true });
+  const btn = h("button", { class: "btn-primary", type: "submit" }, "ログイン");
+  const submit = async (ev) => {
+    ev.preventDefault();
+    btn.disabled = true;
+    try {
+      await unsaid.doctorLogin(email.value.trim(), pw.value);
+      startScreen();
+    } catch (e) {
+      btn.disabled = false;
+      const bad = ["auth/invalid-credential", "auth/wrong-password", "auth/user-not-found", "auth/invalid-email"];
+      toast(bad.includes(e?.code) ? "メールアドレスかパスワードが違います" : "ログインに失敗しました: " + (e?.message ?? e));
+    }
+  };
+  app.replaceChildren(h("section", { class: "d-start" },
+    h("h1", {}, "Kumu"),
+    h("p", {}, "医師用の画面です。ログインしてください"),
+    h("form", { class: "d-login", onsubmit: submit }, email, pw, btn)));
+  email.focus();
+}
+
 // ── 開始画面と QR ──
 function startScreen() {
   app.replaceChildren(h("section", { class: "d-start" },
     h("h1", {}, "Kumu"),
     h("p", {}, "患者さんのスマホで QR を読み取ってもらいます"),
-    h("button", { class: "btn-primary", onclick: begin }, "問診を始める")));
+    h("button", { class: "btn-primary", onclick: begin }, "問診を始める"),
+    h("button", { class: "btn-quiet", onclick: async () => { await unsaid.logout(); loginScreen(); } }, "ログアウト")));
 }
 
 async function begin() {
@@ -684,7 +709,8 @@ async function end() {
 }
 
 (async () => {
-  await unsaid.login();
+  // 一度ログインすればこのブラウザでは次から聞かれない（Firebase Auth が覚えている）
+  if (!(await unsaid.doctorSignedIn())) { history.replaceState(null, "", "doctor.html"); sid = null; return loginScreen(); }
   if (!sid) return startScreen();
   const s = await unsaid.mySession(sid);
   if (!s) { history.replaceState(null, "", "doctor.html"); return startScreen(); }

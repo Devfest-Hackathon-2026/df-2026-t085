@@ -73,6 +73,10 @@ async function patientJoin() {
 }
 
 (async () => {
+  if (role === "doctor" && !(await unsaid.doctorSignedIn())) {
+    $("info").textContent = "医師は先に doctor.html でログインしてください（同じブラウザならこのページでも使えます）";
+    return;
+  }
   await unsaid.login();
   if (role === "doctor" && !sid) {
     const b = el("button", "診察をはじめる（QR を出す）");

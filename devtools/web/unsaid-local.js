@@ -18,6 +18,11 @@ export async function login() {
   return { uid, getIdToken: async () => `local:${uid}` };
 }
 
+// 医師のログイン画面は手元の確認では飛ばす（本物は web/unsaid.js のメール＋パスワード）
+export async function doctorSignedIn() { await login(); return true; }
+export const doctorLogin = () => login();
+export const logout = async () => {};
+
 async function dev(path, body) {
   const { uid } = await login();
   const res = await fetch(path, {

@@ -13,6 +13,13 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
+    // 医師はメール＋パスワードでログインし、かつ doctors/{uid} があるアカウントだけ。
+    // 匿名ログインも、API キーを使ったメールでの新規登録も誰でもできるので、それだけでは session を作れない。
+    // doctors/{uid} は Firebase コンソールでこちらが作る（端末からは読み書きできない）
+    function isDoctorAccount() {
+      return signedIn() && request.auth.token.firebase.sign_in_provider == 'password'
+        && exists(/databases/$(database)/documents/doctors/$(request.auth.uid));
+    }
     function sess(sessionId) {
       return get(/databases/$(database)/documents/sessions/$(sessionId)).data;
     }
@@ -37,11 +44,15 @@ service cloud.firestore {
         && request.resource.data.expireAt <= request.time + duration.value(48, 'h');
     }
 
+    match /doctors/{uid} {
+      allow read, write: if false;
+    }
+
     match /sessions/{sessionId} {
       allow read: if signedIn() && request.auth.uid in resource.data.members;
-      // 医師が作る: 自分1人だけを members に入れ、patientLang は null（患者が参加時に決める）。
+      // 医師が作る（メール＋パスワードでログインした医師だけ）: 自分1人だけを members に入れ、patientLang は null（患者が参加時に決める）。
       // createdAt はサーバーの時刻だけ（端末が未来の時刻を書いて「30分以内」をすり抜けられないように）
-      allow create: if signedIn()
+      allow create: if isDoctorAccount()
         && request.resource.data.keys().hasOnly(['patientLang', 'doctorLang', 'members', 'createdAt', 'expireAt'])
         && expiresSoon()
         && request.resource.data.members == [request.auth.uid]
