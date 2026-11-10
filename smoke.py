@@ -7,8 +7,11 @@
   python smoke.py --api ... --key ... --lang vi --text "Dạo này tôi hay bị đau đầu."
 
 流れ: 患者・医師の2人で匿名ログイン → 医師が session を作る → 患者が言語を選んで参加 → 患者が発言 → /analyze
-     → （確認質問があれば）最初の選択肢で回答 → /translate → 患者が送信 → 医師が受け取る
-     → 医師が発言 → /translate
+     → （従来の流れで確認質問があれば）最初の選択肢で回答 → /translate → 患者が送信 → 医師が受け取る
+     → （医師が選ぶ流れなら）問診メモと確認候補を表示 → 医師が確認候補を送る → 患者が選択肢で答える → 情報の状態を確認
+     → 医師が発言 → /translate → 理解の確認（teach-back）→ 患者が言い直す → 比べた結果
+
+ステージング（別の Firestore データベース）を確かめるとき: --database staging --api <ステージングの URL>（docs/staging.md）
 """
 import argparse
 import json
@@ -19,7 +22,14 @@ import urllib.request
 import uuid
 
 PROJECT = "unsaid-devfest"
-FS = f"https://firestore.googleapis.com/v1/projects/{PROJECT}/databases/(default)/documents"
+DATABASE = "(default)"
+FS = f"https://firestore.googleapis.com/v1/projects/{PROJECT}/databases/{DATABASE}/documents"
+
+
+def use_database(name):
+    global DATABASE, FS
+    DATABASE = name
+    FS = f"https://firestore.googleapis.com/v1/projects/{PROJECT}/databases/{DATABASE}/documents"
 
 sys.stdout.reconfigure(encoding="utf-8")  # Windows でベトナム語・中国語を出しても落ちないように
 
@@ -80,7 +90,7 @@ def doc_get(path, token):
 
 def doc_create(collection, doc_id, data, token, step=None, expect=200):
     """createdAt はサーバーの時刻で入れる（画面の serverTimestamp() と同じ。firestore.rules が求める）。"""
-    name = f"projects/{PROJECT}/databases/(default)/documents/{collection}/{doc_id}"
+    name = f"projects/{PROJECT}/databases/{DATABASE}/documents/{collection}/{doc_id}"
     write = {"update": {"name": name, **fields(data)}, "currentDocument": {"exists": False},
              "updateTransforms": [{"fieldPath": "createdAt", "setToServerValue": "REQUEST_TIME"}]}
     code, body = http("POST", f"{FS}:commit", {"writes": [write]}, token)
@@ -118,11 +128,89 @@ def sign_in_doctor(key, email, password):
     return body["idToken"], body["localId"]
 
 
-def call(api, path, sid, mid, token, step):
+def call(api, path, sid, mid, token, step, **extra):
     t = time.time()
-    code, body = http("POST", api.rstrip("/") + path, {"sessionId": sid, "messageId": mid}, token)
-    must(code == 200, f"{step}（{time.time() - t:.1f}秒）", code, body)
-    return body
+    body = {"sessionId": sid, **({"messageId": mid} if mid else {}), **extra}
+    code, out = http("POST", api.rstrip("/") + path, body, token)
+    must(code == 200, f"{step}（{time.time() - t:.1f}秒）", code, out)
+    return out
+
+
+def settle(a, sid, mid, token, res, who):
+    """Kumu 2.0 の Safety Gate: 意図の確認待ちなら最初の意味を選び、照合の確認待ちなら内容を表示して「未検証として送る」。"""
+    st = res.get("status")
+    if st == "awaiting_intent":
+        g = doc_get(f"sessions/{sid}/messages/{mid}", token)["gate"]["intent"]
+        print(f"       意図の確認: {g['question_speaker']}  候補: {[i['meaning_speaker'] for i in g['interpretations']]}")
+        choice = g["interpretations"][0]["id"] if g["interpretations"] else "free_text"
+        res = call(a.api, "/intent", sid, mid, token, f"{who}が意味を選ぶ", choice=choice, text=a.text)
+        st = res.get("status")
+    if st == "needs_review":
+        v = doc_get(f"sessions/{sid}/messages/{mid}", token)["gate"]["verification"]
+        print(f"       照合: {v['status']}  {[i.get('detail') for i in v['issues'] if i['strength'] == 'strong']}")
+        res = call(a.api, "/review", sid, mid, token, f"{who}が「未検証として送る」", action="send_unverified")
+        st = res.get("status")
+    m = doc_get(f"sessions/{sid}/messages/{mid}", token)
+    must(m["status"] == "sent", f"Safety Gate を通って送信済み（実際: {m['status']}）")
+    g = m.get("gate") or {}
+    print(f"       意図: {(g.get('intent') or {}).get('state')}  照合: {(g.get('verification') or {}).get('status')}"
+          f"  訳し直し: {len(g.get('attempts', [])) - 1}  時間: {g.get('timings')}")
+    return m
+
+
+def doctor_mode_flow(a, sid, mid, pt, dt):
+    """医師が選ぶ流れ: 問診メモ・確認候補 → 医師が確認質問を送る → 患者が選択肢で答える → 情報の状態。"""
+    for _ in range(20):  # 意味の解析は翻訳の後に届く
+        m = doc_get(f"sessions/{sid}/messages/{mid}", dt)
+        if m.get("meaning"):
+            break
+        time.sleep(1)
+    mean = m.get("meaning") or {}
+    must(mean.get("status") == "ready", f"問診メモへの整理（meaning.status={mean.get('status')}）")
+    for f in mean["facts"]:
+        print(f"       情報: [{f['category']}] {f['normalized_meaning']}  ←「{f['source_quote']}」 {f['status']}")
+        must(f["source_quote"] in a.text, f"根拠「{f['source_quote']}」が原文にある")
+    print(f"       採用しなかった AI の出力: {len(mean['rejected'])} 件")
+    if not mean["candidates"]:
+        print("       確認候補なし（この発言は曖昧でないと判断された）")
+        return
+    c = mean["candidates"][0]
+    print(f"       確認候補:「{c['source_quote']}」{c['reason']}")
+    print(f"       質問: {c['question_doctor']} / {c['question_patient']}  選択肢: {c['options_patient']}")
+    q = call(a.api, "/clarify/send", sid, None, dt, "医師が確認質問を送る", messageId=mid, candidateId=c["candidate_id"])
+    qm = doc_get(f"sessions/{sid}/messages/{q['messageId']}", pt)
+    must(qm["kind"] == "clarify", "患者が確認質問を読める")
+    aid = "a-" + uuid.uuid4().hex[:8]
+    if qm["clarify"]["options"]:
+        ans, text = {"type": "option", "index": 0}, qm["clarify"]["options"][0]
+    else:
+        ans, text = {"type": "unsure"}, qm["clarify"]["fixed"]["unsure"]
+    doc_create(f"sessions/{sid}/messages", aid, {"from": "patient", "original": text, "status": "analyzing",
+                                                 "replyTo": q["messageId"], "answer": ans}, pt, f"患者が答える: {text}")
+    call(a.api, "/analyze", sid, aid, pt, "/analyze（答え）")
+    src = doc_get(f"sessions/{sid}/messages/{mid}", dt)["meaning"]
+    cand = next(x for x in src["candidates"] if x["candidate_id"] == c["candidate_id"])
+    print(f"       確認候補の状態: {cand['status']}")
+    for fid in cand["fact_ids"]:
+        f = next(x for x in src["facts"] if x["fact_id"] == fid)
+        print(f"       情報の状態: {f['normalized_meaning']} → {f['status']} {f['resolved_meaning']}")
+        must(f["status"] != "doctor_confirmed", "患者が答えただけでは医師確認済みにならない")
+
+
+def teachback_flow(a, sid, did, pt, dt):
+    print("3b. 理解の確認（teach-back）")
+    q = call(a.api, "/teachback/start", sid, did, dt, "医師が「理解を確認」")
+    aid = "t-" + uuid.uuid4().hex[:8]
+    doc_create(f"sessions/{sid}/messages", aid, {"from": "patient", "original": a.restatement, "status": "analyzing",
+                                                 "replyTo": q["messageId"], "answer": {"type": "free_text"}}, pt,
+               f"患者が言い直す: {a.restatement}")
+    settle(a, sid, aid, pt, call(a.api, "/analyze", sid, aid, pt, "/analyze（言い直し）"), "患者")
+    tb = doc_get(f"sessions/{sid}/messages/{q['messageId']}", dt)["teachback"]
+    r = tb.get("result") or {}
+    print(f"       判定（AI）: {r.get('overall')}  状態: {tb['status']}")
+    for p in r.get("points", []):
+        print(f"       - {p['verdict']}: {p['doctor_point']} / {p['patient_understanding']}")
+    must(tb["status"] in ("assessed", "answered"), "AI の判定だけでは医師確認済みにならない")
 
 
 def main():
@@ -134,7 +222,10 @@ def main():
     p.add_argument("--doctor", default="この薬は1日3回、食後に飲んでください。", help="医師の発言")
     p.add_argument("--doctor-email", required=True, help="Firebase Auth に作った医師のテストアカウント")
     p.add_argument("--doctor-password", required=True)
+    p.add_argument("--restatement", default="Three times a day, after meals.", help="理解の確認で患者が言い直す内容")
+    p.add_argument("--database", default="(default)", help="Firestore のデータベース（ステージングは staging）")
     a = p.parse_args()
+    use_database(a.database)
 
     print("1. ログインと session")
     pt, puid = sign_in(a.key, "患者")
@@ -149,8 +240,11 @@ def main():
     print("2. 患者の発言")
     mid = "p-" + uuid.uuid4().hex[:8]
     doc_create(f"sessions/{sid}/messages", mid, {"from": "patient", "original": a.text, "status": "analyzing"}, pt)
-    call(a.api, "/analyze", sid, mid, pt, "/analyze")
-    m = doc_get(f"sessions/{sid}/messages/{mid}", pt)
+    res = call(a.api, "/analyze", sid, mid, pt, "/analyze")
+    # 2.0（Safety Gate）は status を返す。前回の医師が選ぶ流れは meaning、従来の流れは clarification を返す
+    gated = res.get("status") in ("sent", "awaiting_intent", "needs_review")
+    doctor_mode = gated or "meaning" in res
+    m = settle(a, sid, mid, pt, res, "患者") if gated else doc_get(f"sessions/{sid}/messages/{mid}", pt)
     print(f"       status={m['status']}  facts={[f['doctor_gloss'] for f in m.get('facts', [])]}")
 
     if m["status"] == "clarifying":
@@ -163,28 +257,49 @@ def main():
         call(a.api, "/translate", sid, mid, pt, "/translate")
         m = doc_get(f"sessions/{sid}/messages/{mid}", pt)
 
-    must(m["status"] == "confirmed", f"status が confirmed（実際: {m['status']}）")
+    must(m["status"] == ("sent" if gated else "confirmed"), f"status（実際: {m['status']}）")
     tr = m["translation"]
     print(f"       医師への訳: {tr['text']}")
     print(f"       逆翻訳:     {tr['back_translation']}")
     if tr.get("note"):
         print(f"       注意:       {tr['note']}")
-    doc_patch(f"sessions/{sid}/messages/{mid}", {"status": "sent"}, ["status"], pt, "患者が送信")
+    if gated:
+        doctor_mode_flow(a, sid, mid, pt, dt)
+    elif doctor_mode:
+        call(a.api, "/send", sid, mid, pt, "患者が送信（/send）")
+        doctor_mode_flow(a, sid, mid, pt, dt)
+    else:
+        doc_patch(f"sessions/{sid}/messages/{mid}", {"status": "sent"}, ["status"], pt, "患者が送信")
     doc_patch(f"sessions/{sid}/messages/{mid}", {"status": "received"}, ["status"], dt, "医師が受け取り")
 
     print("3. 医師の発言")
     mid = "d-" + uuid.uuid4().hex[:8]
     doc_create(f"sessions/{sid}/messages", mid, {"from": "doctor", "original": a.doctor, "status": "analyzing"}, dt)
-    call(a.api, "/translate", sid, mid, dt, "/translate")
-    m = doc_get(f"sessions/{sid}/messages/{mid}", pt)
+    res = call(a.api, "/translate", sid, mid, dt, "/translate")
+    m = settle(a, sid, mid, dt, res, "医師") if gated else doc_get(f"sessions/{sid}/messages/{mid}", pt)
     must(m["status"] == "sent", f"status が sent（実際: {m['status']}）")
     print(f"       患者への訳: {m['translation']['text']}")
+    if doctor_mode:
+        code, _ = http("POST", a.api.rstrip("/") + "/teachback/start", {"sessionId": sid, "messageId": mid}, pt)
+        must(code == 403, "患者は医師の操作（理解を確認）を呼べない", code)
+        teachback_flow(a, sid, mid, pt, dt)
 
     print("4. 守られているか")
     doc_create(f"sessions/{sid}/messages", "x1", {"from": "patient", "original": "hi", "status": "confirmed"}, pt,
                "端末は analyzing 以外の状態で発言を作れない", expect=403)
     doc_create(f"sessions/{sid}/messages", "x2", {"from": "doctor", "original": "hi", "status": "analyzing"}, pt,
                "患者は医師になりすませない", expect=403)
+    doc_create(f"sessions/{sid}/messages", "x3", {"from": "patient", "original": "hi", "status": "analyzing",
+                                                  "kind": "clarify"}, pt, "患者は確認質問（kind）を作れない", expect=403)
+    doc_create(f"sessions/{sid}/messages", "x4", {"from": "doctor", "original": "hi", "status": "analyzing",
+                                                  "replyTo": "x"}, dt, "医師は患者の答え（replyTo）を作れない", expect=403)
+    if gated:
+        # Safety Gate を端末から迂回できない: 自分の発言を直接「送信済み」にできない
+        bid = "b-" + uuid.uuid4().hex[:8]
+        doc_create(f"sessions/{sid}/messages", bid, {"from": "patient", "original": "hi", "status": "analyzing"}, pt)
+        q = "updateMask.fieldPaths=status&currentDocument.exists=true"
+        code, _ = http("PATCH", f"{FS}/sessions/{sid}/messages/{bid}?{q}", fields({"status": "sent"}), pt)
+        must(code == 403, "端末は自分の発言を直接「送信済み」にできない（Safety Gate を飛ばせない）", code)
     st, _ = sign_in(a.key, "部外者")
     code, _ = http("GET", f"{FS}/sessions/{sid}", token=st)
     must(code == 403, "メンバー以外は session を読めない", code)

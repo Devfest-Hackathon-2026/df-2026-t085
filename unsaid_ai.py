@@ -10,12 +10,24 @@ from pathlib import Path
 from google import genai
 from google.genai import types
 
-PROJECT = "unsaid-devfest"
-LOCATION = "global"
-# 使うモデル。Cloud Run の環境変数 GEMINI_MODEL で替えられる（どれを選ぶかの根拠は eval/compare_models.py）
-MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
-# translate だけ別のモデルにしたいとき（例: Flash-Lite 系）。空なら MODEL と同じ
+# Gemini（Vertex AI）を呼ぶプロジェクトと場所。Firebase・Firestore・Speech-to-Text の接続先とは別（main.FIREBASE_PROJECT、stt.py）。
+# 評価だけを別のプロジェクトで流すときは環境変数で替える（コードの変更は不要。既定はチームのプロジェクト）:
+#   UNSAID_VERTEX_PROJECT=<プロジェクト ID> UNSAID_VERTEX_LOCATION=global python eval/compare.py --live
+# global は Gemini 3.8 Flash の公式の提供先（GA）。処理する場所は保証されないので、実データでは us / eu などを検討する
+PROJECT = os.environ.get("UNSAID_VERTEX_PROJECT", "unsaid-devfest")
+LOCATION = os.environ.get("UNSAID_VERTEX_LOCATION", "global")
+# 使うモデル。Cloud Run の環境変数 GEMINI_MODEL（main と同じ名前）か UNSAID_MODEL で替えられる
+# （どれを選ぶかの根拠は eval/compare_models.py）
+MODEL = os.environ.get("UNSAID_MODEL") or os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+# 役割ごとのモデル（Cloud Run の環境変数で替えられる）。空なら呼ぶたびに MODEL を使う（_call の model or MODEL。
+# eval/compare_models.py が MODEL を差し替えて比べられるように、import の時点では決めない）。
+# translate だけ軽いモデルに替えて速度を比べる（例: Flash-Lite 系）。
+# 検証（VERIFY_MODEL）を翻訳と別のモデルにすると、同じ誤りを共有しにくくなる（それでも一致は正しさの証明ではない）。
+# 重要な意味の検証を軽いモデルにするのは、実測で精度が落ちないと分かるまでしない（DESIGN_DECISIONS.md）
 TRANSLATE_MODEL = os.environ.get("TRANSLATE_MODEL", "")
+SOURCE_MODEL = os.environ.get("SOURCE_MODEL", "")
+VERIFY_MODEL = os.environ.get("VERIFY_MODEL", "")
+AUDIT_MODEL = os.environ.get("AUDIT_MODEL", "")
 # 1回の待ち時間の上限と、超えたときの再試行回数。
 # 実測では普段 2〜7 秒、まれに 40〜70 秒かかる外れ値があったため、待たずに打ち直す
 TIMEOUT_SEC = 12
@@ -55,6 +67,24 @@ FIXED_OPTIONS = {
     "en": {"unsure": "I can't explain it well", "free_text": "I'll write it myself"},
     "zh-CN": {"unsure": "我说不清楚", "free_text": "我自己写"},
     "vi": {"unsure": "Tôi không giải thích được", "free_text": "Tôi sẽ tự viết"},
+}
+
+# 医師が送った確認質問に患者が付けられる固定の答え（モデルに作らせない）。医師画面には doctor の文言で出す
+ANSWER_FIXED = {
+    "ja": {"unsure": "分からない", "none": "どれでもない"},
+    "en": {"unsure": "I don't know", "none": "None of these"},
+    "zh-CN": {"unsure": "我不知道", "none": "都不是"},
+    "vi": {"unsure": "Tôi không biết", "none": "Không cái nào đúng"},
+}
+ANSWER_FIXED_DOCTOR = {"unsure": "（患者: 分からない）", "none": "（患者: どれにも当てはまらない）"}
+
+# 理解の確認（teach-back）の依頼文。毎回同じ文にしたいのでモデルに作らせない。
+# 「あなたが理解できたか」ではなく「私の説明が分かりやすかったか」と聞く（teach-back の基本。患者を試さない）
+TEACHBACK_PROMPT = {
+    "ja": "説明が伝わったか確かめたいので、理解した内容をご自分の言葉で教えてください。",
+    "en": "To make sure I explained it clearly, please tell me in your own words what you understood.",
+    "zh-CN": "为了确认我说明得清楚，请用你自己的话说一说你理解了什么。",
+    "vi": "Để chắc chắn tôi đã giải thích rõ, bạn hãy nói lại bằng lời của mình những gì bạn đã hiểu.",
 }
 
 _client = None
@@ -244,28 +274,97 @@ def _snap_target(target, utterance):
     return snapped if len(snapped) >= 2 else target
 
 
-def translate(original, source_lang, target_lang, direction, clarification=None):
+def translate(original, source_lang, target_lang, direction, clarification=None, context=None,
+              turns=None, confirmed_intent=None, fix=None):
     """確認後の翻訳。direction は "patient_to_doctor" か "doctor_to_patient"。
 
     clarification は {"target", "question", "answer_type": option|free_text|unsure, "answer"} か None。
+    context は医師の確認質問への答えのとき {"question_as_shown", "question"}（短い答えを訳せるように）か None。
     """
-    return _call(
-        "prompts/translate_system.txt",
-        "schemas/translate.json",
-        model=TRANSLATE_MODEL or None,
-        payload={
-            "direction": direction,
-            "source_lang": _lang(source_lang),
-            "target_lang": _lang(target_lang),
-            "original": original,
-            "clarification": clarification,
-        },
-    )
+    payload = {
+        "direction": direction,
+        "source_lang": _lang(source_lang),
+        "target_lang": _lang(target_lang),
+        "original": original,
+        "clarification": clarification,
+    }
+    if context:
+        payload["context"] = context
+    for k, v in (("turns", turns), ("confirmed_intent", confirmed_intent), ("fix", fix)):
+        if v:
+            payload[k] = v
+    return _call("prompts/translate_system.txt", "schemas/translate.json", model=TRANSLATE_MODEL or None, payload=payload)
+
+
+def source_agent(utterance, speaker, speaker_lang, listener_lang, turns=None):
+    """Source Agent: 発話意図（文脈で決まるか・本人に聞くべきか）と、原文の意味の枠（Semantic Bridge）。検証は ussa.build_intent。"""
+    return _call("prompts/source_system.txt", "schemas/source.json", model=SOURCE_MODEL or None, payload={
+        "speaker": speaker, "speaker_lang": _lang(speaker_lang), "listener_lang": _lang(listener_lang),
+        "utterance": utterance, "context": turns or [],
+    })
+
+
+def extract_frame(text, lang, speaker):
+    """Verification Engine の B: 訳文だけから、独立に意味の枠を取る（原文は渡さない）。"""
+    return _call("prompts/frame_system.txt", "schemas/frame_extract.json", model=VERIFY_MODEL or None,
+                 payload={"lang": _lang(lang), "speaker": speaker, "text": text})
+
+
+def compare_meaning(source, source_lang, translation, target_lang, speaker, confirmed_intent=None, doctor_lang="ja"):
+    """Verification Engine の C: 原文と訳文を直接照合する。翻訳した側の判断（意図の推測など）は渡さない。"""
+    return _call("prompts/verify_system.txt", "schemas/verify_compare.json", model=VERIFY_MODEL or None, payload={
+        "source_lang": _lang(source_lang), "target_lang": _lang(target_lang), "doctor_lang": _lang(doctor_lang),
+        "speaker": speaker, "source": source, "translation": translation, "confirmed_intent": confirmed_intent,
+    })
+
+
+def audit(latest, memory, open_issues, closed_issues, doctor_lang="ja"):
+    """Conversation Auditor: 最新の発言と、記憶（重要な発言の要点）と、未解決事項だけを渡す（会話全体は渡さない）。"""
+    return _call("prompts/audit_system.txt", "schemas/audit.json", model=AUDIT_MODEL or None, payload={
+        "doctor_lang": _lang(doctor_lang), "latest": latest, "memory": memory,
+        "open_issues": open_issues, "closed_issues": closed_issues,
+    })
+
+
+def meaning(utterance, patient_lang, doctor_lang="ja", context=None, already_asked=None, pending_question=None):
+    """Meaning Engine: 患者の発言 → 診療に関わる情報（原文の根拠つき）・確認候補・確認質問への答えの解釈を1回で。
+
+    患者は待たない（翻訳と並列に投げ、医師が見るのは患者が送信した後）。出力の検証は clinical.build_meaning。
+    """
+    return _call("prompts/meaning_system.txt", "schemas/meaning.json", {
+        "patient_lang": _lang(patient_lang),
+        "doctor_lang": _lang(doctor_lang),
+        "utterance": utterance,
+        "context": context or [],
+        "already_asked": already_asked or [],
+        "pending_question": pending_question,
+    })
+
+
+def compare_understanding(explanation, explanation_as_shown, restatement, patient_lang, doctor_lang="ja",
+                          explanation_frame=None):
+    """理解の確認（teach-back）: 医師の説明と、患者が自分の言葉で言い直した内容を比べる。検証は clinical.build_teachback。
+    explanation_frame は説明の意味の枠（ヒント。説明の文が常に正しい）。"""
+    return _call("prompts/teachback_system.txt", "schemas/teachback.json", {
+        "doctor_lang": _lang(doctor_lang),
+        "patient_lang": _lang(patient_lang),
+        "explanation": explanation,
+        "explanation_as_shown": explanation_as_shown,
+        "restatement": restatement,
+        "explanation_frame": explanation_frame,
+    })
+
+
+def schema(name):
+    """サーバー側の検証に使う JSON スキーマ（Gemini に渡すものと同じファイル）。"""
+    return _load(f"schemas/{name}.json")
 
 
 def warm_up():
     """サーバー起動時に1回呼んで、最初の呼び出しが遅い問題をデモ前に済ませておく。"""
     try:
-        analyze("I have a headache.", "en")
+        f = submit(meaning, "I have a headache.", "en")
+        translate("I have a headache.", "en", "ja", "patient_to_doctor")
+        f.result()
     except Exception:
         pass

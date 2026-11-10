@@ -3,3 +3,9 @@
 __pycache__/
 *.pyc
 .env
+devtools/
+tests/
+eval/
+docs/
+web/
+.pytest_cache/

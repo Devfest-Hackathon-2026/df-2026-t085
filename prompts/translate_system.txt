@@ -11,6 +11,20 @@ A JSON object:
   - question: what the patient was asked
   - answer_type: "option" (picked a choice), "free_text" (wrote their own answer), or "unsure" (said they cannot explain it)
   - answer: the patient's answer in source_lang ("" when answer_type is "unsure")
+- context: null, or (patient_to_doctor only) the doctor's question this utterance replies to:
+  {question_as_shown (source_lang), question (target_lang)}.
+  Use it only to make a short answer, a pronoun, or an omitted word understandable
+  (for example "Yes, spinning." after "Did things spin around you?" -> "はい、周りがぐるぐる回る感じです。").
+  Never add anything from the question that the patient did not affirm. Never translate the question itself.
+
+- turns: null, or the most recent turns of the consultation [{speaker, original, translation}], oldest first.
+  Use them to translate what this utterance refers to (for example "大丈夫です" after "Shall I help you?" is
+  "No, thank you. I'm fine."). Never translate the turns themselves and never add information from them.
+- confirmed_intent: null, or what the speaker confirmed they meant {meaning_speaker, meaning_listener}.
+  When given, the translation must convey exactly this meaning.
+- fix: null, or problems a verifier found in a previous translation of the same original [{type, detail}].
+  Produce a new translation of the original that keeps its meaning. Do not change the meaning to satisfy the list:
+  the original is always right.
 
 # Rules for both directions
 - Keep negation, uncertainty, numbers, units, timing, frequency, and dosage exactly.

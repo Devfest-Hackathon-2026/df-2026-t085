@@ -3,6 +3,82 @@
 画面（Yusei）が知っておくことは「Firestore に発言を作る → その id で API を呼ぶ → あとは onSnapshot で待つ」だけ。
 API のレスポンスを使わなくても、結果は同じメッセージに書き戻されるので画面は勝手に更新される。
 
+> **2026-11-09 追記（`feature/unsaid-clinical-meaning`）**：既定の流れが「医師が確認質問を選ぶ」（`CLARIFY_MODE=doctor`）になった。
+> 下の「医師が選ぶ流れ」が今の約束。その後ろの節は従来の流れ（`CLARIFY_MODE=patient`）として残している。
+> データの形と状態遷移は [ARCHITECTURE.md](../ARCHITECTURE.md)、判断の理由は [DESIGN_DECISIONS.md](../DESIGN_DECISIONS.md)。
+
+## Kumu 2.0: Safety Gate を通る送信（既定・2026-11-09）
+
+端末がするのは「発言を作る（＝送信操作）」と、その id で API を呼ぶことだけ。**`status: sent` を書けるのはサーバーだけ**（firestore.rules）。
+医師の発言も患者の発言も同じ流れ（[ARCHITECTURE.md](../ARCHITECTURE.md) の 3・4）。
+
+```
+端末   addDoc {from, original, status:"analyzing"[, replyTo, answer]}  → 患者 POST /analyze ／ 医師 POST /translate
+API    gate.state: SOURCE_CONFIRMED → ANALYZING →（意図が決まらない）AWAITING_INTENT_CLARIFICATION（status "awaiting_intent"）
+                                             → VERIFYING → READY_TO_SEND → SENT（status "sent"、translation を書く）
+                                                         → NEEDS_REVIEW（status "needs_review"。自動では送らない）
+端末   AWAITING のとき: POST /intent {messageId, choice: "i1"… | "free_text" + text | "none"}
+       NEEDS_REVIEW のとき: POST /review {messageId, action: "send_unverified" | "rephrase"}
+       いつでも（送る前）: POST /cancel {messageId}
+医師   患者の未着の発言: POST /reveal {messageId} → {original, lang, state, verified:false, draft}
+医師   未解決事項: POST /issue/update {issueId, action: hold | unhold | resolve | dismiss | reopen, note?}
+```
+
+| メソッド | パス | 誰が | 成功時 | 断るとき |
+|---|---|---|---|---|
+| POST | `/analyze` | 患者（自分の発言） | `{status: sent｜awaiting_intent｜needs_review｜stopped, verification, timings}` | 発言者以外 403、処理中・処理済み 409、二重送信 409（2つ目は取り消し）、Gemini の失敗 502（status error・原文は残る） |
+| POST | `/translate` | 医師（自分の発言） | 同上 | 同上 |
+| POST | `/intent` | 発言者 | 本人の意味で訳し直し、照合して送る | AWAITING 以外 409、選択肢が無い・説明が空 400 |
+| POST | `/review` | 発言者 | `send_unverified` → 送る（`gate.override = speaker_ack`）／`rephrase` → 取り消し（`original` を返す） | NEEDS_REVIEW 以外 409 |
+| POST | `/cancel` | 発言者 | 取り消し（`original` を返す）。解析が後から終わっても送らない | 送信済み 409 |
+| POST | `/reveal` | 医師 | 患者の未着の発言の原文（未検証）。見たことを記録 | 届いた発言 400、患者 403 |
+| POST | `/issue/update` | 医師 | 未解決事項の状態 | 閉じた事項の保留・できない遷移 409、無い事項 404 |
+| POST | `/teachback/start` | 医師 | `{messageId}`。`previousId`（再説明の前の理解の確認）を渡すと、確認済みにしたとき前の相違も解決 | |
+| POST | `/clarify/send` | 医師 | 確認候補の対訳をそのまま送る → すぐ届く（`gate.verification = PRETRANSLATED`）。**編集・自作した質問は医師の発言と同じく Safety Gate を通る**（`{status: sent｜awaiting_intent｜needs_review, messageId}`。確認待ちは `/intent`・`/review`）。元の候補・`issueId` の未解決事項は、質問が**届いたときに**「質問送信済み」・「確認中」になる | 同じ候補の質問がまだ確認中なら 409 |
+
+メッセージの `gate`: `state` `history[]` `run_id` `source_hash` `intent {state, decided_by, interpretations[], question_speaker, frame, confirmed}`
+`verification {status, issues[{type, strength, layer, detail, detail_speaker?}], failures}` `draft {translation, back_translation}` `attempts[]` `override` `revealed[]` `timings`。
+`translation` は SENT になったときにだけ書く。session の `audit {issues[], memory[], seq}` は Conversation Auditor（サーバーだけが書く）。
+
+## 確認候補と理解の確認（前回、2026-11-09 の 1 回目）
+
+```
+患者の発言:
+  端末   addDoc {from:"patient", original, status:"analyzing"}       → POST /analyze
+  API    translate と meaning を並列 → translation, status "confirmed" → meaning（問診メモ・確認候補）を書き足す
+  端末   逆翻訳を見て「送信」                                         → POST /send（status "sent"）
+  医師   受け取った → status "received"（端末が直接書く）
+
+医師が確認候補を送る:                                                  POST /clarify/send {messageId, candidateId[, questionDoctor]}
+  API    医師の発言 {kind:"clarify", status:"sent", clarify{...}} を作り、候補を asked に
+患者が答える:
+  端末   addDoc {from:"patient", original, status:"analyzing", replyTo:<質問の id>, answer:{type, index?}} → POST /analyze
+         type: option（original = 選んだ選択肢、index = 番号）/ unsure / none → API が訳を付けてそのまま "sent"
+         type: free_text → 翻訳と解釈 → "confirmed" → 患者が POST /send
+  API    送信済みになったら、元の発言の候補と fact を更新（clinical.apply_answer）
+
+理解の確認:                                                            POST /teachback/start {messageId: 医師の説明}
+  API    医師の発言 {kind:"teachback", teachback{explanation_id, status:"asked"}} を作る
+  端末   患者は話す画面で自分の言葉で答える（replyTo, answer:{type:"free_text"}）→ POST /analyze → POST /send
+  API    teachback_result を答えに、teachback.result / status "assessed" を依頼に書く
+  医師   POST /teachback/resolve {messageId: 依頼, action: confirm | reexplain}
+```
+
+| メソッド | パス | 誰が | ボディ（`sessionId` に加えて） | 成功時 |
+|---|---|---|---|---|
+| POST | `/analyze` | 患者 | `messageId` | 200。`status`・`translation`・`meaning`（答えなら `teachback_result`） |
+| POST | `/send` | 患者 | `messageId` | 200 `{status:"sent"}`。もう送っていれば何もしない。`confirmed` 以外は 409 |
+| POST | `/clarify/send` | 医師 | `messageId` + `candidateId`（そのまま）／ + `questionDoctor`（編集）／ `questionDoctor` + 任意で `messageId`・`factId`（自分で書く） | 200 `{messageId, candidateId}`。編集・自作は Gemini で訳す（選択肢なし） |
+| POST | `/clarify/update` | 医師 | `messageId`, `candidateId`, `action: hold｜dismiss｜restore` | 200。できない遷移は 409 |
+| POST | `/fact/update` | 医師 | `messageId`, `factId`, `action: confirm｜flag｜reset`, `note?` | 200。できない遷移は 409。未解決の「再確認が必要」（`rechecks[].required`）は、この操作で解決として記録する（記録は消さない） |
+| POST | `/teachback/start` | 医師 | `messageId`（送信済みの医師の説明） | 200 `{messageId}` |
+| POST | `/teachback/resolve` | 医師 | `messageId`（依頼）, `action: confirm｜reexplain` | 200 |
+| POST | `/meaning/retry` | メンバー | `messageId`（`meaning.status` が `error`、または期限切れの `retrying` の発言）。所有者 ID（`meaning.retry_run`）と期限（`meaning.retry_until`、130 秒）を付けて始め、サーバーが止まっても期限が切れたら引き継げる。初回と同じ文脈で解析し、保存時にトランザクションで最新を読み直す（引き継がれた古い処理は書き戻さない）。成功したら答えを元の候補・情報に結びつける（下の「医師の判断の後に届いた答え」）。回答履歴は送った順・重複なし | 200。必要なければ・期限内のやり直し中・ほかの処理に引き継がれたら 409 |
+
+- 医師だけの API を患者・第三者が呼ぶと 403。問診を作ってから `SESSION_MAX_HOURS`（12 時間）を過ぎると 410。
+- `/send` と医師の操作は Gemini を使わないので、呼び出し回数（`MAX_CALLS_PER_SESSION`）に数えない。
+- 以前の画面のように Firestore に直接 `status: "sent"` を書いても送れる（ルールで許している）が、その場合は答えを元の情報に結びつけない。
+
 ## 全体の流れ
 
 音声入力のときは、この前に `POST /transcribe` で文字にして、患者が確認してから下の `addDoc` をする（docs/stt.md）。
@@ -159,3 +235,17 @@ Firestore のルール案は `firestore.rules`（端末が書けるのは上の�
 - **確認質問なしの発言は、analyze の流れで翻訳まで済ませる。** 端末の呼び出しが1回で済み、患者は逆翻訳を見てから送れる。
 - **失敗は `status: "error"`** にして、同じ API の呼び直しで復帰できるようにした（合意したスキーマへの追加）。
 - **`translation` に `back_translation` と `note` を追加**（合意したスキーマは `{lang, text}`）。逆翻訳は VoiceTra 等との差別化ポイント。
+
+
+## 医師の判断の後に届いた答え（`facts[].rechecks`）
+
+医師が確認済み・要修正にした情報（fact）に、確認質問への答えが届いたとき、答えを送った時刻（`sentAt`）と医師の判断の時刻を比べる。
+
+| 答え | 情報の状態 | 記録 |
+|---|---|---|
+| 医師の判断より 1 秒以上前に届いていた（医師は原文と訳を見て判断した。解析が遅れただけ） | 変えない | 履歴に `patient_answered_late` |
+| 医師の判断の後に届いた・時刻が分からない・差が 1 秒未満（時計のずれ。安全側に倒す） | 患者回答あり（「分からない」なら未確認）に戻し、**再確認が必要** | 履歴に `patient_answered` と `recheck_required`。`rechecks` に、医師の判断（`doctor_event` `doctor_at` `doctor_note` `doctor_status`）・判断したときの答えと内容（`doctor_answer_id` `doctor_resolved_meaning`）・直前の答え（`previous_answer_id`）・新しい答え（`new_answer_id` `new_meaning`）を残す |
+
+医師の判断の履歴は消さない。医師がもう一度判断すると `required: false`・`resolved_by`・`resolved_at` を付ける。
+確認候補の `answers` は送った順に並べ、最後が今の答え。後から送った答えがすでにあれば、古い答えは記録だけ（`superseded_by`）で、情報を巻き戻さない。
+医師の画面は問診メモに「再確認が必要」、根拠の欄に判断したときの内容と新しい答えを出す。カルテ用の文章では［要再確認］。

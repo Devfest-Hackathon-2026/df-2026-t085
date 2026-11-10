@@ -1,0 +1,66 @@
+{
+ "type": "object",
+ "properties": {
+  "equivalent": {
+   "type": "boolean"
+  },
+  "issues": {
+   "type": "array",
+   "maxItems": 8,
+   "items": {
+    "type": "object",
+    "properties": {
+     "type": {
+      "type": "string",
+      "enum": [
+       "polarity_flip",
+       "quantity_change",
+       "unit_change",
+       "time_change",
+       "frequency_change",
+       "condition_missing",
+       "actor_change",
+       "consent_refusal_confusion",
+       "certainty_change",
+       "symptom_presence_flip",
+       "omission",
+       "addition",
+       "other"
+      ]
+     },
+     "severity": {
+      "type": "string",
+      "enum": [
+       "critical",
+       "minor"
+      ]
+     },
+     "source_quote": {
+      "type": "string"
+     },
+     "translation_quote": {
+      "type": "string"
+     },
+     "explanation_doctor": {
+      "type": "string"
+     },
+     "explanation_speaker": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "type",
+     "severity",
+     "source_quote",
+     "translation_quote",
+     "explanation_doctor",
+     "explanation_speaker"
+    ]
+   }
+  }
+ },
+ "required": [
+  "equivalent",
+  "issues"
+ ]
+}
