@@ -106,7 +106,7 @@
 
 ```
 患者スマホ / 医師PC（Firebase Hosting: web/）
-   │  Firestore（onSnapshot で2台同期、匿名ログイン＋メンバーだけ読めるルール）
+   │  Firestore（onSnapshot で2台同期、医師はメール＋パスワード・患者は匿名でログイン＋メンバーだけ読めるルール）
    │  HTTP（Firebase ID トークン）
    ▼
 Cloud Run: unsaid-api（FastAPI, asia-northeast1）
@@ -124,7 +124,7 @@ Cloud Run: unsaid-api（FastAPI, asia-northeast1）
 | 翻訳 | 確認の後に別呼び出し。`back_translation` と `note` を返す | [ai-pipeline.md](ai-pipeline.md) |
 | 音声入力 | Speech-to-Text v2 Chirp 3。文字を患者が直してから送る。Web Speech API と Gemini への音声直渡しは不採用 | [stt.md](stt.md) |
 | データ | Firestore（asia-northeast1）。`sessions/{id}` と `sessions/{id}/messages/{id}`。Gemini の結果はサーバーだけが書く | [api.md](api.md#メッセージのフィールドsessionssessionidmessagesmessageid) |
-| 認証 | 匿名ログイン＋ members によるルール（医師のログイン方法は **TBD**） | `firestore.rules` |
+| 認証 | 医師はメール＋パスワード（`doctors/{uid}` がある人だけ session を作れる）、患者は匿名。members によるルール | `firestore.rules` |
 
 ### 非機能
 
@@ -161,7 +161,7 @@ Cloud Run: unsaid-api（FastAPI, asia-northeast1）
 | 1 | 程度の語（"a little" など）を確認の対象にするか | 対象外（時間・頻度だけ） | 協力医師に聞いて kosora |
 | 2 | デモで使う患者の言語 | 英語の想定 | kosora |
 | 3 | 医師の履歴一覧・受付番号メモをデモに入れるか | 入れない（将来の拡張） | kosora |
-| 4 | 医師のログイン方法 | デモは匿名。本番は Google ログインが必要 | kosora |
+| 4 | 医師のログイン方法 | **決定（11/10）**: メール＋パスワード。アカウントはこちらで作り `doctors/{uid}` に登録。本番は医師資格の確認（HPKI など）が必要 | kosora |
 | 5 | 訂正（送った後に言い直す）を作るか。合意スキーマの `corrected` / `correctionOf` / `correctedBy` は未実装 | 作らない | kosora |
 | 6 | 医師の音声入力をデモで使うか | 使う（`/transcribe` は医師にも対応済み） | kosora・Yusei |
 

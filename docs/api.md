@@ -111,7 +111,7 @@ API    gate.state: SOURCE_CONFIRMED → ANALYZING →（意図が決まらない
 | POST | `/end` | 医師が「診察を終える」とき（ボディは `{"sessionId"}` だけ） | 200。`{deleted}`。その session の発言と session を消す。医師（`members[0]`）以外は 403 |
 | GET | `/health` | 動作確認 | `{"ok": true}` |
 
-- ヘッダー: `Authorization: Bearer <Firebase の ID トークン>`（匿名ログインの `auth.currentUser.getIdToken()`）
+- ヘッダー: `Authorization: Bearer <Firebase の ID トークン>`（患者は匿名ログイン、医師はメール＋パスワードでログインした `auth.currentUser.getIdToken()`）
 - ボディ: `{"sessionId": "...", "messageId": "..."}` だけ。本文や言語は API が Firestore から読み直す（端末の言うことをそのまま信じない）。
 - レスポンス: Firestore に書いた内容と同じ（デバッグ用。画面は onSnapshot を使えばよい）。
 - 上限: 1つの session で /analyze・/translate・/transcribe を合わせて `MAX_CALLS_PER_SESSION` 回（既定 200）。超えると 429。
