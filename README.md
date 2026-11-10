@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/brand/kumu-banner.png" width="800" alt="Kumu（くむ）多言語の問診を、訳す前に確かめる。"></p>
+
 # Kumu（くむ）
 
 **外国人患者の「あいまいな一言」を、訳す前に本人に確かめる問診支援アプリ**（カテゴリ：医療・福祉）
