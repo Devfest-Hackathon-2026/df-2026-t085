@@ -12,7 +12,7 @@ flowchart LR
     D[医師の PC<br/>doctor.html]
   end
   H[Firebase Hosting]
-  A[Firebase Auth<br/>匿名ログイン]
+  A[Firebase Auth<br/>医師: メール＋パスワード<br/>患者: 匿名]
   F[(Cloud Firestore<br/>sessions / messages)]
   subgraph CR[Cloud Run: FastAPI main.py]
     G[Safety Gate<br/>ussa.py]

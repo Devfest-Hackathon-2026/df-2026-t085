@@ -62,7 +62,7 @@ firebase hosting:channel:deploy clinical-meaning --expires 7d --project unsaid-d
 ```
 
 プレビューチャンネルは live の画面を置き換えない。表示された URL の `/doctor.html` を開く。
-匿名ログインはプロジェクト共通なので、そのまま使える（Firebase コンソールの「承認済みドメイン」にプレビューの URL が要る場合は追加する）。
+ログイン（医師のメール＋パスワード・患者の匿名）はプロジェクト共通なので、そのまま使える（Firebase コンソールの「承認済みドメイン」にプレビューの URL が要る場合は追加する）。
 
 ## 5. 確かめる
 
@@ -92,7 +92,7 @@ gcloud run services delete unsaid-api-staging --region asia-northeast1
 | 作るもの | コマンドの例 | 費用 |
 |---|---|---|
 | API の有効化 | `gcloud services enable aiplatform.googleapis.com run.googleapis.com firestore.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com speech.googleapis.com --project kumu-devfest-2026` | 有効化自体は無料 |
-| Firebase の追加・ウェブアプリ・匿名ログイン | Firebase コンソールで既存の GCP プロジェクトに Firebase を追加 → ウェブアプリを登録 → Authentication で「匿名」を有効 | 無料枠 |
+| Firebase の追加・ウェブアプリ・匿名ログイン | Firebase コンソールで既存の GCP プロジェクトに Firebase を追加 → ウェブアプリを登録 → Authentication で「匿名」と「メール / パスワード」を有効 → 医師のアカウントを作り、その UID で Firestore に `doctors/{uid}` を作る（[deploy.md](deploy.md) の手順 5） | 無料枠 |
 | Firestore（`(default)` で可。チームのとは別のプロジェクトなので混ざらない） | `gcloud firestore databases create --location=asia-northeast1 --project kumu-devfest-2026` ＋ TTL（上の 1 と同じ） | 少量なら無料枠 |
 | ルール | `firebase deploy --only firestore:rules --project kumu-devfest-2026` | 無料 |
 | Cloud Run（API） | `gcloud run deploy unsaid-api-staging --source . --region asia-northeast1 --project kumu-devfest-2026 --allow-unauthenticated --memory 512Mi --timeout 120 --max-instances 2 --set-env-vars UNSAID_VERTEX_PROJECT=kumu-devfest-2026,FIREBASE_PROJECT=kumu-devfest-2026,STT_PROJECT=kumu-devfest-2026` | 使った分（Cloud Build・Artifact Registry を含む） |

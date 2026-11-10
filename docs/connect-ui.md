@@ -20,9 +20,10 @@ firebaseConfig は「ウェブアプリ」を登録しないと出てこない�
 
 `apiKey` は秘密ではない（ブラウザに配る前提の値）。リポジトリにコミットしてよい。守っているのは `firestore.rules` と API 側のメンバー確認。
 
-### 1-2. 匿名ログインとルール（smoke.py が通っていれば済んでいる）
+### 1-2. ログインとルール（smoke.py が通っていれば済んでいる）
 
-- Authentication → Sign-in method → **匿名** が「有効」になっているか確認。
+- Authentication → Sign-in method → **匿名**（患者）と **メール / パスワード**（医師）が「有効」になっているか確認。
+- 医師のアカウントが Authentication → Users にあり、その UID で Firestore に `doctors/{uid}` があるか確認（[deploy.md](deploy.md) の手順 5）。
 - Firestore Database → ルール に `firestore.rules` の中身が入っているか確認（違っていたら貼って「公開」）。
 - Authentication → 設定 → **承認済みドメイン** に、画面を開く場所が入っているか。`localhost` と `unsaid-devfest.web.app` / `.firebaseapp.com` は最初から入っている。それ以外（例: ngrok の URL）で開くならここに足す。
 
@@ -68,7 +69,8 @@ import * as unsaid from "./unsaid.js";
 
 | 関数 | どの画面で | すること |
 |---|---|---|
-| `login()` | 両方、最初に | 匿名ログイン。再読み込みしても同じ人のまま |
+| `login()` | 患者、最初に | 匿名ログイン。再読み込みしても同じ人のまま |
+| `doctorSignedIn()` / `doctorLogin(email, password)` / `logout()` | 医師 | メール＋パスワードでのログイン。一度ログインすれば、このブラウザでは次から聞かれない。session を作れるのはこのログインをした医師だけ |
 | `createSession()` | 医師 | 「診察をはじめる」で session を作り、id を返す。`patientLang` は患者が参加するまで `null` |
 | `joinUrl(sid, page)` / `qrSvg(url)` | 医師 | 患者がスマホで開く URL（`page` は患者の画面、既定 `try.html`）と、その QR の `<svg>` 文字列。`el.innerHTML = unsaid.qrSvg(unsaid.joinUrl(sid, "patient.html"))` |
 | `watchSession(sid, cb)` | 両方 | `patientLang` などを読む。医師は `patientLang` が入ったら QR を消して会話画面へ |

@@ -12,7 +12,7 @@
 Kumu は Gemini と、プログラムで作った安全装置（Safety Gate）で、こうしたずれを**送る前・届いた後・会話全体**で見つけます。
 確認で解消できるものは解消し、**解消できないものは確定させずに人に見せます**。診断はしません。
 
-- 画面（医師 PC）：https://unsaid-devfest.web.app/doctor.html （患者は QR をスマホで読むだけ）
+- 画面（医師 PC）：https://unsaid-devfest.web.app/doctor.html （医師はメール＋パスワードでログイン。患者は QR をスマホで読むだけ）
 - この README の機能（Kumu 2.0・USSA）は、main に統合しても**本番には自動では載りません**。本番の Cloud Run・Firestore のルール・Hosting を**同時に**切り替える必要があります（[docs/deploy.md](docs/deploy.md) の「Kumu 2.0 を本番に出すとき」）。ステージングの手順は [docs/staging.md](docs/staging.md)。
 
 ## 何をするか（Unified Semantic Safety Architecture）
