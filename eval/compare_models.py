@@ -89,7 +89,7 @@ def main():
     L += ["", "トークン数は1回あたりの平均。料金は Vertex AI の料金ページの単価を掛けて出す。", "",
           "## モデルごとに結果が違った文", "", "| 文 | 正解 | " + " | ".join(allrows) + " |",
           "|---|---|" + "---|" * len(allrows)]
-    for i, c in enumerate(CASES):
+    for c in CASES:
         cells = []
         for rows in allrows.values():
             mine = [x for x in rows if x["text"] == c["text"]]

@@ -16,25 +16,42 @@
 </head>
 <body>
 <!-- 医師の PC（UI 案B v2）。「問診を始める」→ QR を全画面 → 患者が参加したら自動で閉じる → 会話＋問診メモ。
-     患者の発言は「送信」された後だけ出す（確認中のものは「患者が確認しています…」の1行だけ） -->
+     患者の発言は「送信」された後だけ出す（確認中のものは「患者が確認しています…」の1行だけ）。
+     問診メモの項目を押すと原文の根拠と確認の履歴が開く。曖昧な所は「確認候補」として医師が選んで患者に聞く（自動では聞かない）。
+     自分の説明には「理解を確認」で、患者に自分の言葉で言い直してもらえる（teach-back）。
+     送信操作の後、意図の解析・訳の照合（Safety Gate）を通ったものだけが相手に届く。意味が決まらない・照合で相違が残ったときだけ、
+     自分の吹き出しの下に確認のカードが出る。会話全体で見つかった食い違いは問診メモの「未解決事項」に出る -->
 <div id="app"></div>
 <script type="module">
 import * as unsaid from "./unsaid.js";
-import { h, icon, MIC_SVG, STOP_SVG, toast, micController, buildMemo, isConfirmed, ATTRS, stuckWatch } from "./ui.js";
+import { h, icon, MIC_SVG, STOP_SVG, toast, micController, stuckWatch } from "./ui.js";
+import {
+  clinicalMemo, candidates, teachbacks, karteText, CATEGORY_LABEL, STATUS_LABEL, EVENT_LABEL, ATTR_ORDER, TB_LABEL,
+  verificationOf, unverified, activeIssues, ISSUE_LABEL, ISSUE_STATUS_LABEL, recheckRequired,
+} from "./clinical.js";
 
 const LANG_NAME = { en: "英語", "zh-CN": "中国語", vi: "ベトナム語" };
-// 問診メモの並び。facts の kind ごとに埋まった項目だけを出す
-const KINDS = [
-  ["symptom", "症状"], ["onset", "いつから"], ["frequency", "頻度"], ["severity", "程度"],
-  ["medication", "薬"], ["allergy", "アレルギー"], ["other", "その他"],
-];
+const SHOW_CANDIDATES = 3; // 確認候補は重要な3件まで先に出し、残りは「ほか N件」で開く
 
 const app = document.getElementById("app");
 const params = new URLSearchParams(location.search);
 let sid = params.get("s");
-const S = { session: null, msgs: [], mic: "idle", openOrig: new Set(), sending: false };
+const S = {
+  session: null, msgs: [], byId: new Map(), tbs: new Map(), mic: "idle", openOrig: new Set(), sending: false,
+  openFact: null,     // 根拠を開いている問診メモの項目（"発言id:fact_id"）
+  candOpen: true, showMore: false, showHeld: false,
+  editing: null, editText: "", // 編集中の確認候補（"発言id:候補id"）と、その文
+  asking: null,       // 医師が自分で書く質問 {mid, fid, label, text}
+  busy: new Set(),    // 押した操作（二重押しを防ぐ）
+  online: true,
+  intentOwn: null, intentText: "", // 自分の発言の意味を自分の言葉で説明しているとき（発言 id）
+  revealed: new Map(), // 医師が「未検証の内容を見る」を押した患者の発言 → サーバーが返した中身
+  issueOpen: true, showHeldIssues: false, openIssue: null,
+  reexplainOf: null,  // 再説明したときの、前の理解の確認の id（次の「理解を確認」に渡す）
+};
 let mic;
 let watch; // 待ちのまま止まった発言を見つける（ui.js）
+let input; // 医師の入力欄（再説明の文を入れるため）
 
 const fail = (e) => { if (S.ending) return; console.error(e); toast("失敗しました: " + (e?.message ?? e)); };
 
@@ -50,6 +67,7 @@ async function begin() {
   try {
     sid = await unsaid.createSession();
     history.replaceState(null, "", `?s=${sid}`);
+    await unsaid.unlockStaging(sid);  // 独立ステージングだけ（本番では何もしない）
     showQr();
   } catch (e) { fail(e); }
 }
@@ -81,6 +99,7 @@ function main(session) {
     onText: (text) => {
       if (!text) { toast("聞き取れませんでした。もう一度話すか、入力してください"); return; }
       input.value = input.value ? `${input.value} ${text}` : text;
+      paintClear();
       input.focus();
     },
     onChange: (st) => { S.mic = st; paintMic(); },
@@ -89,8 +108,14 @@ function main(session) {
 
   const log = h("div", { class: "d-log", "aria-live": "polite" });
   const memo = h("div", { class: "d-memo-items" });
-  const input = h("input", { id: "dinput", placeholder: "押して話す、または入力", autocomplete: "off",
+  input = h("input", { id: "dinput", placeholder: "押して話す、または入力", autocomplete: "off",
+    oninput: () => paintClear(),
     onkeydown: (e) => { if (e.key === "Enter" && !e.isComposing) say(); } });
+  // 音声認識の結果は入力欄に入るだけ（送らない）。確かめて直してから「送る」。やめるときは消す
+  const clearBtn = h("button", { class: "btn-link d-clear", "aria-label": "入力を消す", title: "入力を消す",
+    onclick: () => { input.value = ""; paintClear(); input.focus(); } }, icon("x"));
+  const paintClear = () => { clearBtn.hidden = !input.value; };
+  paintClear();
   const micBtn = h("button", { class: "mic", onclick: () => mic.toggle() });
   const paintMic = () => {
     const rec = S.mic === "recording";
@@ -107,7 +132,8 @@ function main(session) {
     if (!text || S.sending) return;
     S.sending = true;
     input.value = "";
-    try { await unsaid.say(sid, "doctor", text); } catch (e) {
+    paintClear();
+    try { await unsaid.say(sid, "doctor", text, null, () => { S.sending = false; }); } catch (e) {
       // 発言はできたが API に届かなかった: その発言に「もう一度」を出す。発言自体が無ければ文字を入力欄に戻す
       if (e.messageId) { watch.fail(e.messageId); refresh(); } else input.value = text;
       fail(e);
@@ -115,54 +141,196 @@ function main(session) {
     S.sending = false;
   }
 
+  const dot = h("span", { class: "dot" });
+  const headText = h("span", {});
+  const lang = LANG_NAME[session.patientLang] ?? session.patientLang;
+  unsaid.watchConnection((on) => {
+    S.online = on;
+    dot.className = "dot" + (on ? "" : " off");
+    headText.textContent = on ? `患者（${lang}）と接続中` : "通信が切れています。つながると自動で続きます";
+  });
+
   app.replaceChildren(h("div", { class: "d-app" },
     h("section", { class: "d-main" },
-      h("div", { class: "d-head" }, h("span", { class: "dot" }), `患者（${LANG_NAME[session.patientLang] ?? session.patientLang}）と接続中`),
+      h("div", { class: "d-head", role: "status" }, dot, headText),
       log,
       h("div", { class: "d-input" },
         micBtn,
         h("label", { for: "dinput", class: "sr-only" }, "医師の発言"),
         input,
+        clearBtn,
         h("button", { class: "send", onclick: say }, "送る"))),
     h("aside", { class: "d-memo", "aria-label": "問診メモ" },
       h("h2", {}, "問診メモ"),
       memo,
       h("div", { class: "d-foot" },
-        h("button", { class: "btn-primary d-copy", onclick: copyMemo }, "カルテにコピー"),
-        h("small", {}, "診断はしません。診察を終えると、この問診の記録はすべて消えます"),
+        h("button", { class: "btn-primary d-copy", onclick: openKarte }, "カルテにコピー"),
+        h("small", {}, "診断はしません。AI の抽出・判定は医師が確認してください。診察を終えると、この問診の記録はすべて消えます"),
         h("button", { class: "btn-quiet", onclick: end }, "診察を終える")))));
 
   watch = stuckWatch(() => { if (S.msgs.some((m) => m.status === "analyzing")) refresh(); });
+  // 未解決事項（Conversation Auditor）は session に入る。診察を終えると消える（null は無視）
+  unsaid.watchSession(sid, (s) => { if (s) { S.session = s; paintMemo(); } }, () => {});
   unsaid.watchMessages(sid, (msgs) => {
     S.msgs = msgs;
+    S.byId = new Map(msgs.map((m) => [m.id, m]));
+    S.tbs = teachbacks(msgs);
     log.replaceChildren(...renderLog());
-    memo.replaceChildren(...renderMemo());
+    paintMemo();
     log.scrollTop = log.scrollHeight; // 新しい発言が来たら一番下（最新）を見せる
     for (const m of msgs) if (m.from === "patient" && m.status === "sent") unsaid.receive(sid, m.id).catch(fail);
   }, fail);
   input.focus();
 }
 
-const shown = (m) => m.from === "doctor" || ["sent", "received"].includes(m.status);
+// 医師の発言は（取り消したもの以外）すべて、患者の発言は届いたものだけを出す
+const shown = (m) => m.status !== "cancelled" && (m.from === "doctor" || ["sent", "received"].includes(m.status));
+
+const PENDING_TEXT = {
+  awaiting_intent: "患者が自分の発言の意味を確認しています…",
+  needs_review: "訳の照合で相違があり、患者が送るか言い直すかを決めています…",
+  error: "患者の発言の処理に失敗しました（患者の画面で「もう一度」を押すと続きます）",
+};
 
 function renderLog() {
   const visible = S.msgs.filter(shown);
   const latestPt = visible.filter((m) => m.from === "patient").at(-1);
-  const out = visible.map((m) => (m.from === "doctor" ? mine(m) : patient(m, m === latestPt)));
-  const lastPt = S.msgs.filter((m) => m.from === "patient").at(-1);
+  const lastDoc = visible.filter((m) => m.from === "doctor" && !m.kind).at(-1);
+  const out = visible.map((m) => (m.from === "doctor" ? mine(m, m === lastDoc) : patient(m, m === latestPt)));
+  const lastPt = S.msgs.filter((m) => m.from === "patient" && m.status !== "cancelled").at(-1);
   if (lastPt && !shown(lastPt)) {
-    out.push(h("div", { class: "d-pending" }, h("div", { class: "spinner", "aria-hidden": "true" }), "患者が確認しています…"));
+    const text = PENDING_TEXT[lastPt.status]
+      ?? (lastPt.gate?.state === "VERIFYING" ? "患者の発言の訳を照合しています…" : "患者が確認しています…");
+    out.push(h("div", { class: "d-pending" }, h("div", { class: "spinner", "aria-hidden": "true" }), text,
+      !S.revealed.has(lastPt.id) && h("button", { class: "btn-link", disabled: S.busy.has(`rv:${lastPt.id}`),
+        onclick: () => act(`rv:${lastPt.id}`, async () => { S.revealed.set(lastPt.id, await unsaid.reveal(sid, lastPt.id)); }) },
+        "未検証の内容を見る")));
+    const r = S.revealed.get(lastPt.id);
+    // 緊急時のため: AI の確認が終わる前の原文を、未検証・意味は未確定と分かる形で見せる。問診メモには入れない
+    if (r) out.push(h("div", { class: "d-note d-reveal" },
+      h("strong", {}, icon("triangle-alert"), " 未検証・意味は未確定（AI の確認が終わっていません）"),
+      h("div", {}, `原文（${LANG_NAME[r.lang] ?? r.lang}）: `, h("span", { lang: r.lang }, r.original)),
+      r.draft && h("div", {}, `機械翻訳（未検証・参考）: ${r.draft}`)));
   }
   return out;
 }
 
-function mine(m) {
+// 操作を1回だけ走らせる（終わるまで同じボタンは効かない）。409 などは画面に出す
+async function act(key, fn) {
+  if (S.busy.has(key)) return;
+  S.busy.add(key);
+  paintMemo();
+  try { await fn(); } catch (e) { fail(e); }
+  S.busy.delete(key);
+  paintMemo();
+  refresh();
+}
+
+function mine(m, last) {
   const again = () => { watch.reset(m); refresh(); unsaid.retry(sid, m).catch(fail); };
+  const ver = verificationOf(m);
+  const cancel = () => act(`cx:${m.id}`, async () => {
+    const r = await unsaid.cancelMessage(sid, m.id);
+    if (r?.original && !input.value) { input.value = r.original; input.focus(); }
+  });
   const st = m.status === "error" || watch.isStuck(m) ? h("button", { class: "btn-link", onclick: again }, "もう一度")
-    : m.status === "analyzing" ? h("span", { class: "st wait" }, "翻訳中…")
-    : h("span", { class: "st" }, icon("check"), "送信済み");
-  return h("div", { class: "d-mine", title: m.translation?.back_translation ? `患者には: ${m.translation.back_translation}` : null },
-    m.original, " ", st);
+    : m.status === "analyzing" ? [h("span", { class: "st wait" }, m.gate?.state === "VERIFYING" ? "訳を照合中…" : "確認中…"),
+      h("button", { class: "btn-link tb", onclick: cancel }, "取り消す")]
+    : m.status === "awaiting_intent" ? h("span", { class: "st wait" }, "意味の確認待ち（まだ送っていません）")
+    : m.status === "needs_review" ? h("span", { class: "st wait" }, "送る前の確認待ち")
+    : h("span", { class: "st", title: ver?.status === "VERIFIED" ? "訳の照合で相違は見つかりませんでした（正しさの証明ではありません）" : null },
+      icon("check"), "送信済み");
+  const kind = m.kind === "clarify" ? "確認質問" : m.kind === "teachback" ? "理解の確認" : null;
+  // 自分の説明について「理解を確認」（最後の説明は常に、それより前はマウスを乗せたときに出す）
+  let tb = null;
+  if (!m.kind && m.status === "sent") {
+    const req = S.tbs.get(m.id);
+    const st = req?.teachback.status;
+    if (st === "asked") tb = h("span", { class: "st wait" }, "理解を確認中…");
+    else if (st === "doctor_confirmed") tb = h("span", { class: "st" }, icon("check-check"), "理解を確認済み");
+    else if (st !== "answered" && st !== "assessed") {
+      tb = h("button", { class: "btn-link tb", disabled: S.busy.has(`tb:${m.id}`),
+        onclick: () => act(`tb:${m.id}`, async () => {
+          await unsaid.startTeachback(sid, m.id, S.reexplainOf);
+          S.reexplainOf = null;
+        }) }, req ? "もう一度確認" : "理解を確認");
+    }
+  }
+  return h("div", { class: "d-mine" + (last ? " last" : ""),
+    title: m.translation?.back_translation && !m.kind ? `患者には: ${m.translation.back_translation}` : null },
+    kind && h("span", { class: "kind" }, kind), m.original, " ", st, tb,
+    m.status === "sent" && ver && ver.level !== "ok" && [" ", tag(ver.label, ver.level === "warn" ? "warn" : "")],
+    m.kind === "clarify" && m.clarify.options_doctor?.length > 0
+      && h("span", { class: "sub" }, `選択肢: ${m.clarify.options_doctor.join(" / ")}`),
+    m.status === "awaiting_intent" && intentCard(m),
+    m.status === "needs_review" && reviewCard(m));
+}
+
+// 言い直すとき、文を元の入力に戻す。確認質問なら、普通の発言ではなく元の確認候補・情報・未解決事項の質問欄に戻す
+function restoreDraft(m, text) {
+  const c = m.kind === "clarify" ? m.clarify : null;
+  if (!c) { input.value = text; input.focus(); return; }
+  if (c.candidate_id && c.source_message_id) {
+    S.editing = `${c.source_message_id}:${c.candidate_id}`;
+    S.editText = text;
+  } else {
+    S.asking = c.issue_id ? { issueId: c.issue_id, label: "未解決事項", text }
+      : { mid: c.source_message_id, fid: c.fact_id, label: "質問", text };
+  }
+  S.candOpen = S.issueOpen = true;
+  paintMemo();
+}
+
+// 自分の発言の意味が文脈で決まらないとき（Translation Intent Clarification）。選ぶ・自分の言葉で説明する・言い直す
+function intentCard(m) {
+  const it = m.gate.intent;
+  const k = `in:${m.id}`;
+  const busy = S.busy.has(k);
+  const choose = (choice, text = "") => act(k, async () => {
+    await unsaid.chooseIntent(sid, m.id, choice, text);
+    S.intentOwn = null;
+  });
+  const rephrase = () => act(k, async () => {
+    const r = await unsaid.chooseIntent(sid, m.id, "none");
+    restoreDraft(m, r?.original ?? m.original);
+  });
+  const own = S.intentOwn === m.id || !it.interpretations?.length;
+  const ta = own && h("textarea", { id: `intent-${m.id}`, rows: 2, placeholder: "伝えたい意味を書く", "aria-label": "伝えたい意味",
+    oninput: (e) => { S.intentText = e.target.value; } });
+  if (ta) ta.value = S.intentOwn === m.id ? S.intentText : "";
+  return h("div", { class: "d-cand d-intent" },
+    h("div", { class: "q" }, it.question_speaker || "この発言の意味を、自分の言葉で書いてください"),
+    it.reason_speaker && h("div", { class: "why" }, it.reason_speaker),
+    it.interpretations?.length > 0 && h("div", { class: "opts-col" }, it.interpretations.map((i) =>
+      h("button", { class: "btn-small", disabled: busy, onclick: () => choose(i.id) }, i.meaning_speaker))),
+    ta,
+    h("div", { class: "acts" },
+      own && h("button", { class: "btn-small primary", disabled: busy,
+        onclick: () => { const v = (ta.value || "").trim(); if (v) choose("free_text", v); } }, "この意味で送る"),
+      !own && h("button", { class: "btn-link", onclick: () => { S.intentOwn = m.id; S.intentText = ""; refresh(); } }, "自分の言葉で説明"),
+      h("button", { class: "btn-link", disabled: busy, onclick: rephrase }, "どれでもない（言い直す）")));
+}
+
+// 訳の照合で重要な相違が残ったとき（訳し直しても）。自動では送らない。言い直すか、未検証として送るかを医師が決める
+function reviewCard(m) {
+  const g = m.gate;
+  const v = g.verification ?? {};
+  const k = `rv:${m.id}`;
+  const issues = (v.issues ?? []).filter((i) => i.strength === "strong").slice(0, 4);
+  const send = () => act(k, () => unsaid.reviewMessage(sid, m.id, "send_unverified"));
+  const rephrase = () => act(k, async () => {
+    const r = await unsaid.reviewMessage(sid, m.id, "rephrase");
+    restoreDraft(m, r?.original ?? m.original);
+  });
+  return h("div", { class: "d-tbres warn" },
+    h("div", { class: "h" }, icon("triangle-alert"),
+      v.status === "VERIFICATION_FAILED" ? "訳を照合できませんでした" : "訳の照合で相違が見つかりました",
+      h("small", {}, "まだ患者には届いていません")),
+    issues.length > 0 && h("ul", {}, issues.map((i) => h("li", {}, i.detail || i.type))),
+    g.draft?.back_translation && h("div", {}, `訳を日本語に戻すと:「${g.draft.back_translation}」`),
+    h("div", { class: "acts" },
+      h("button", { class: "btn-link", disabled: S.busy.has(k), onclick: rephrase }, "言い直す"),
+      h("button", { class: "btn-link", disabled: S.busy.has(k), onclick: send }, "未検証として送る")));
 }
 
 function patient(m, latest) {
@@ -175,77 +343,332 @@ function patient(m, latest) {
   const checked = a && a.type !== "unsure";
   // 「何をどう確かめたか」。日本語（tr.clarified_*）が無い古い発言は患者の言語のまま出す
   const how = checked && `「${tr.clarified_target || c.target}」→ ${tr.clarified_answer || a.text}`;
+  // 医師の確認質問・理解の確認への答え
+  const q = m.replyTo ? S.byId.get(m.replyTo) : null;
+  const res = m.meaning?.resolution;
+  const answered = q?.kind === "clarify" && res?.resolves !== "no" && res?.meaning_doctor;
+  const reply = q && h("span", { class: "kind" }, q.kind === "teachback" ? "理解の確認への答え" : "確認質問への答え");
+  const resolved = answered && q.clarify.source_quote
+    && h("span", {}, `「${q.clarify.source_quote}」→ ${res.meaning_doctor}`);
+  const ver = verificationOf(m);
+  const userIntent = !m.replyTo && m.gate?.intent?.state === "USER_CONFIRMED";
+  const unv = unverified(m);
   return h("div", { class: "d-pt" + (latest ? " latest" : "") },
     h("div", { class: "tr" }, tr.text ?? ""),
-    (latest || checked || tr.note) && h("div", { class: "d-meta" },
+    (latest || checked || tr.note || q || unv || userIntent) && h("div", { class: "d-meta" },
+      reply,
+      userIntent && h("span", { class: "badge-ok", title: m.gate.intent.confirmed?.meaning_listener ?? "" }, icon("check"), "本人が意味を確認"),
+      ver && ver.level !== "ok" && tag(ver.label, ver.level === "warn" ? "warn" : ""),
+      latest && ver?.level === "ok" && h("span", { class: "ver", title: "訳の照合で相違は見つかりませんでした（正しさの証明ではありません）" },
+        icon("check"), "訳を照合済み"),
       checked && h("span", { class: "badge-ok" }, icon("check"), "本人が確認済み"),
       how && h("span", {}, how),
+      answered && h("span", { class: "badge-ok" }, icon("check"), "患者が回答"),
+      resolved,
       toggle),
     tr.note && h("div", { class: "d-note" }, tr.note),
-    open && h("div", { class: "d-orig", lang: S.session?.patientLang }, m.original));
+    unv && h("div", { class: "d-note" }, "この訳は照合で相違が残ったまま、患者が「未検証として送る」を選んだものです。原文を確認してください。",
+      h("div", { lang: S.session?.patientLang }, `原文: ${m.original}`)),
+    m.meaning?.status === "error" && h("div", { class: "d-note" }, "問診メモへの整理に失敗しました（原文と訳はそのままです）。",
+      h("button", { class: "btn-link", onclick: () => act(`mr:${m.id}`, () => unsaid.retryMeaning(sid, m.id)) }, "もう一度整理する")),
+    // やり直し中のまま止まった（サーバーの停止など）とき用。期限（lease）内ならサーバーが断るので二重には走らない
+    m.meaning?.status === "retrying" && h("div", { class: "d-note" }, "問診メモに整理し直しています。止まったままのときは、もう一度押してください。",
+      h("button", { class: "btn-link", onclick: () => act(`mr:${m.id}`, () => unsaid.retryMeaning(sid, m.id)) }, "もう一度整理する")),
+    open && h("div", { class: "d-orig", lang: S.session?.patientLang }, m.original),
+    q?.kind === "teachback" && tbCard(m, q));
 }
 
-// 「頭痛がある」「頭痛があります」を同じ項目とみなすための鍵（語尾・句読点・空白を落とす）
-const memoKey = (t) => t.replace(/[。、．,.!！\s]/g, "")
-  .replace(/(があります|がある|がします|がする|あります|ある|します|する|です|ます)$/, "");
-const LABEL = Object.fromEntries(KINDS);
-
-// 確認した語を含む項目は、本人が確かめた内容（日本語）で置き換える
-const memoItem = (f, m) => {
-  const confirmed = isConfirmed(f, m) && Boolean(m.translation?.clarified_answer);
-  return { text: confirmed ? m.translation.clarified_answer : f.doctor_gloss || f.text, confirmed,
-    negated: f.negated, uncertain: f.uncertain && !confirmed };
-};
-
-// 「カルテにコピー」: 問診メモをそのまま電子カルテに貼れる日本語の文章にする（記録は診察終了で消えるので、残す分はここで写す）
-function memoText() {
-  const { symptoms, others, count } = buildMemo(S.msgs, memoItem, memoKey);
-  if (!count) return "";
-  const mark = (it) => `${it.negated ? "（なし）" : ""}${it.uncertain ? "（あいまい）" : ""}${it.confirmed ? "（本人確認済み）" : ""}`;
-  const lang = LANG_NAME[S.session?.patientLang] ?? S.session?.patientLang ?? "";
-  const lines = [`【問診メモ（Kumu・${lang}話者・${new Date().toLocaleDateString("ja-JP")}）】`];
-  if (symptoms.length) {
-    lines.push(`${LABEL.symptom}:`);
-    for (const sy of symptoms) {
-      lines.push(`・${sy.text}${mark(sy)}`);
-      for (const a of ATTRS) if (sy.attrs[a]) lines.push(`　${LABEL[a]}: ${sy.attrs[a].text}${mark(sy.attrs[a])}`);
-    }
+// 理解の確認の結果（患者の答えの下）。AI の判定は「確定」ではないので、医師が確認済み／再説明を選ぶ
+function tbCard(m, q) {
+  const r = m.teachback_result;
+  const tb = q.teachback;
+  const current = tb.answer_message_id === m.id;
+  if (!r) return h("div", { class: "d-wait" }, h("div", { class: "spinner", "aria-hidden": "true" }), "説明と比べています…");
+  const k = `tbr:${q.id}`;
+  const confirm = () => act(k, () => unsaid.resolveTeachback(sid, q.id, "confirm"));
+  const reexplain = () => act(k, async () => {
+    await unsaid.resolveTeachback(sid, q.id, "reexplain");
+    S.reexplainOf = q.id; // 次の「理解を確認」で、この確認とつなぐ（確認済みにすると前の相違も解決になる）
+    if (r.suggested_reexplanation) input.value = r.suggested_reexplanation; // 医師が直してから送る
+    input.focus();
+  });
+  const done = tb.status === "doctor_confirmed";
+  const acts = current && !done && h("div", { class: "acts" },
+    r.overall !== "consistent" && h("button", { class: "btn-link", disabled: S.busy.has(k), onclick: reexplain }, "再説明する"),
+    h("button", { class: "btn-link", disabled: S.busy.has(k), onclick: confirm }, "理解を確認済みにする"));
+  const state = done ? h("span", { class: "badge-ok" }, icon("check"), "医師が理解を確認")
+    : tb.status === "needs_reexplain" && current ? h("small", {}, "再説明が必要") : null;
+  if (r.overall === "consistent") {
+    return h("div", { class: "d-tbres ok" }, h("div", { class: "h" }, icon("check"), TB_LABEL.consistent,
+      h("small", {}, "AI の判定"), state), acts);
   }
-  for (const [k, label] of KINDS) if (others.has(k)) lines.push(`${label}: ${others.get(k).map((it) => it.text + mark(it)).join("、")}`);
-  lines.push("※機械翻訳による患者の申告の整理。診断ではありません。");
-  return lines.join("\n");
+  const cls = r.overall === "inconsistent" ? "warn" : "neutral";
+  return h("div", { class: `d-tbres ${cls}` },
+    h("div", { class: "h" }, r.overall === "inconsistent" && icon("triangle-alert"), TB_LABEL[r.overall],
+      h("small", {}, r.overall === "error" ? "訳を見て確認してください" : "AI の判定です。医師が確認してください"), state),
+    r.points.some((p) => p.verdict !== "match") && h("ul", {}, r.points.filter((p) => p.verdict !== "match").map((p) =>
+      h("li", {}, `説明: ${p.doctor_point}`, h("br"),
+        `患者の理解: ${p.patient_understanding || "（触れていない）"}`,
+        p.restatement_quote && h("span", { lang: S.session?.patientLang }, `（「${p.restatement_quote}」）`)))),
+    acts);
 }
 
-async function copyMemo() {
-  const text = memoText();
-  if (!text) { toast("まだ問診メモがありません"); return; }
-  try { await navigator.clipboard.writeText(text); toast("問診メモをコピーしました。カルテに貼り付けてください"); }
-  catch (e) { fail(e); }
+// ── 問診メモ ──
+function paintMemo() {
+  const memo = app.querySelector(".d-memo-items");
+  if (!memo) return;
+  const focus = document.activeElement?.id; // 書きかけの質問の入力欄は、描き直しても入力を続けられるようにする
+  memo.replaceChildren(...renderMemo().filter(Boolean));
+  const el = focus && document.getElementById(focus);
+  if (el && el.tagName === "TEXTAREA") { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
 }
 
 function renderMemo() {
-  const { symptoms, others, count } = buildMemo(S.msgs, memoItem, memoKey);
-  if (!count) return [h("div", { class: "empty" }, "患者が送ると、ここに整理されます")];
-  const marks = (it) => [
-    it.negated && h("span", { class: "tag" }, "否定"),
-    it.uncertain && h("span", { class: "tag" }, "あいまい"),
-    it.confirmed && h("span", { class: "check", role: "img", "aria-label": "本人が確認済み" }, icon("check"))];
+  const memo = clinicalMemo(S.msgs);
   const out = [];
-  if (symptoms.length) out.push(h("div", {}, h("div", { class: "k" }, LABEL.symptom),
-    symptoms.map((sy) => h("div", { class: "sym" },
-      h("div", { class: "v" }, sy.text, marks(sy)),
-      ATTRS.filter((a) => sy.attrs[a]).map((a) => h("div", { class: "attr" },
-        h("span", { class: "ak" }, LABEL[a]), sy.attrs[a].text, marks(sy.attrs[a]),
-        sy.attrs[a].prev.length > 0 && h("div", { class: "prev" }, `前の答え: ${sy.attrs[a].prev.join("、")}`)))))));
-  for (const [k, label] of KINDS) {
-    if (!others.has(k)) continue;
-    out.push(h("div", {}, h("div", { class: "k" }, label), others.get(k).map((it) => h("div", { class: "v" }, it.text, marks(it)))));
+  if (!memo.count) out.push(h("div", { class: "empty" }, "患者が送ると、ここに整理されます"));
+  if (memo.symptoms.length) out.push(h("div", {}, h("div", { class: "k" }, CATEGORY_LABEL.symptom),
+    memo.symptoms.map((sy) => h("div", { class: "sym" },
+      factLine(sy, "v"),
+      ATTR_ORDER.filter((a) => sy.attrs?.get(a)).flatMap((a) => sy.attrs.get(a).map((it) =>
+        h("div", { class: "attr" }, h("span", { class: "ak" }, CATEGORY_LABEL[a]), factLine(it, null))))))));
+  for (const k of memo.otherOrder) {
+    out.push(h("div", {}, h("div", { class: "k" }, CATEGORY_LABEL[k]), memo.others.get(k).map((it) => factLine(it, "v"))));
   }
+  if (memo.notMentioned.length) {
+    out.push(h("div", { class: "empty" }, `言及なし: ${memo.notMentioned.map((c) => CATEGORY_LABEL[c]).join("・")}`));
+  }
+  out.push(renderIssues());
+  out.push(renderCandidates());
   return out;
+}
+
+const tag = (text, cls = "") => h("span", { class: `tag ${cls}`.trim() }, text);
+function marks(f, chief, msg) {
+  return [
+    chief && tag("主訴"),
+    f.polarity === "denied" && tag("否定"),
+    f.polarity === "uncertain" && tag("不確か"),
+    f.status === "unconfirmed" && tag("未確認", "warn"),
+    f.status === "patient_answered" && tag("患者回答", "ok"),
+    f.status === "needs_correction" && tag("要修正", "bad"),
+    recheckRequired(f) && tag("再確認が必要", "bad"),
+    f.status === "doctor_confirmed" && h("span", { class: "check", role: "img", "aria-label": "医師確認済み", title: "医師確認済み" }, icon("check")),
+    msg && unverified(msg) && tag("訳未検証", "warn"),
+  ];
+}
+
+// 問診メモの1項目。押すと原文の根拠・確認の履歴・医師の操作が開く
+function factLine(it, cls) {
+  const open = S.openFact === it.ref;
+  const btn = h("button", { class: "d-fact", "aria-expanded": String(open), title: "原文の根拠を見る",
+    onclick: () => { S.openFact = open ? null : it.ref; paintMemo(); } }, it.text);
+  const body = [btn, marks(it.fact, it.chief, it.msg),
+    it.prev.length > 0 && h("div", { class: "prev" }, `前の答え: ${it.prev.join("、")}`),
+    open && evidence(it)];
+  return cls ? h("div", { class: cls }, body) : h("span", {}, body);
+}
+
+const time = (iso) => { try { return new Date(iso).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }); } catch { return ""; } };
+const row = (label, ...v) => h("div", { class: "row" }, h("span", {}, label), h("span", {}, ...v));
+
+function evidence(it) {
+  const f = it.fact, m = it.msg;
+  const k = `f:${it.ref}`;
+  const src = f.span_start >= 0
+    ? [m.original.slice(0, f.span_start), h("mark", {}, m.original.slice(f.span_start, f.span_end)), m.original.slice(f.span_end)]
+    : [m.original];
+  const doAct = (action) => act(k, () => unsaid.updateFact(sid, m.id, f.fact_id, action));
+  const busy = S.busy.has(k);
+  return h("div", { class: "d-evidence" },
+    row("原文", h("span", { class: "src", lang: S.session?.patientLang }, src)),
+    row("訳", m.translation?.text ?? ""),
+    row("状態", STATUS_LABEL[f.status] ?? f.status, f.legacy ? "" : "（AI の抽出は原文に実在する部分だけを採用）"),
+    // 医師の判断の後に届いた新しい答え: 医師が判断したときの内容と新しい答えを並べる（医師がもう一度判断するまで）
+    (f.rechecks ?? []).filter((r) => r.required).map((r) => row("再確認",
+      `${time(r.doctor_at)} に${r.doctor_event === "doctor_flag" ? "要修正" : "確認済み"}にした後、新しい答えが届きました。`,
+      r.doctor_resolved_meaning ? `判断したときの内容「${r.doctor_resolved_meaning}」→ ` : "",
+      r.new_meaning ? `新しい答え「${r.new_meaning}」` : "新しい答え: 患者は確定できず")),
+    f.history?.length > 0 && row("履歴", h("ol", {}, f.history.map((e) => h("li", {},
+      `${time(e.at)} ${EVENT_LABEL[e.event] ?? e.event}`, e.event === "patient_answered" && e.detail ? `「${e.detail}」` : "")))),
+    !f.legacy && h("div", { class: "acts" },
+      f.status !== "doctor_confirmed" && h("button", { class: "btn-small primary", disabled: busy, onclick: () => doAct("confirm") }, "確認済みにする"),
+      f.status !== "needs_correction" && h("button", { class: "btn-small", disabled: busy, onclick: () => doAct("flag") }, "要修正"),
+      ["doctor_confirmed", "needs_correction"].includes(f.status)
+        && h("button", { class: "btn-link", disabled: busy, onclick: () => doAct("reset") }, "取り消す"),
+      h("button", { class: "btn-link", onclick: () => {
+        S.asking = { mid: m.id, fid: f.fact_id, label: it.text, text: "" }; S.candOpen = true; paintMemo();
+        document.getElementById("ask-text")?.focus();
+      } }, "患者に質問する")));
+}
+
+// ── 未解決事項（Conversation Auditor）。会話全体で見つかった食い違い・未回答・説明に足りない点。医師が決める ──
+function renderIssues() {
+  const { open, held } = activeIssues(S.session?.audit);
+  if (!open.length && !held.length) return null;
+  const head = h("button", { class: "d-cands-head", "aria-expanded": String(S.issueOpen),
+    onclick: () => { S.issueOpen = !S.issueOpen; paintMemo(); } },
+    icon(S.issueOpen ? "chevron-down" : "chevron-right"), "未解決事項", h("span", { class: "n" + (open.length ? "" : " zero") }, `${open.length}件`));
+  if (!S.issueOpen) return h("div", { class: "d-cands" }, head);
+  return h("div", { class: "d-cands" }, head,
+    S.asking?.issueId && askBox(),
+    open.map(issueCard),
+    held.length > 0 && h("button", { class: "d-more", onclick: () => { S.showHeldIssues = !S.showHeldIssues; paintMemo(); } },
+      S.showHeldIssues ? "保留中を閉じる" : `保留中 ${held.length}件`),
+    S.showHeldIssues && held.map(issueCard));
+}
+
+function issueCard(i) {
+  const k = `is:${i.issue_id}`;
+  const busy = S.busy.has(k);
+  const opened = S.openIssue === i.issue_id;
+  const doAct = (action) => act(k, () => unsaid.updateIssue(sid, i.issue_id, action));
+  const quotes = new Map(i.evidence.map((e) => [e.utterance_id, e.quote]));
+  const mark = (text, q) => {
+    const at = q ? text.indexOf(q) : -1;
+    return at < 0 ? [text] : [text.slice(0, at), h("mark", {}, q), text.slice(at + q.length)];
+  };
+  return h("div", { class: "d-cand" },
+    h("div", { class: "q" }, ISSUE_LABEL[i.type] ?? i.type, i.severity === "high" && [" ", tag("重要", "warn")],
+      ISSUE_STATUS_LABEL[i.status] && [" ", tag(ISSUE_STATUS_LABEL[i.status], "ok")]),
+    h("div", { class: "ask" }, i.description),
+    h("button", { class: "d-more", "aria-expanded": String(opened), onclick: () => { S.openIssue = opened ? null : i.issue_id; paintMemo(); } },
+      opened ? "根拠を閉じる" : `根拠（${i.related_utterances.length}件の発言）`),
+    opened && h("div", { class: "d-evidence" }, i.related_utterances.map((id) => {
+      const u = S.byId.get(id);
+      if (!u) return null;
+      const who = u.from === "doctor" ? "医師" : "患者";
+      return h("div", {}, h("div", { class: "row" }, h("span", {}, who),
+        h("span", { class: "src", lang: u.from === "patient" ? S.session?.patientLang : "ja" }, mark(u.original, quotes.get(id)))),
+        u.translation?.text && h("div", { class: "row" }, h("span", {}, "訳"), h("span", {}, mark(u.translation.text, quotes.get(id)))));
+    })),
+    h("div", { class: "acts" },
+      h("button", { class: "btn-small primary", disabled: busy, onclick: () => {
+        S.asking = { issueId: i.issue_id, label: ISSUE_LABEL[i.type] ?? i.type, text: i.suggested_question || "" };
+        S.issueOpen = true; paintMemo(); document.getElementById("ask-text")?.focus();
+      } }, "確認質問を送る"),
+      h("button", { class: "btn-link", disabled: busy, onclick: () => doAct(i.held ? "unhold" : "hold") }, i.held ? "保留を解除" : "保留"),
+      h("button", { class: "btn-link", disabled: busy, onclick: () => doAct("resolve") }, "解決済み"),
+      h("button", { class: "btn-link", disabled: busy, onclick: () => doAct("dismiss") }, "無視")));
+}
+
+// ── 確認候補（Gemini が見つけた、意味の確定していない所）。医師が選んで送る。送らなくてもよい ──
+function renderCandidates() {
+  const c = candidates(S.msgs);
+  const n = c.open.length;
+  if (!n && !c.held.length && !c.asked.length && !(S.asking && !S.asking.issueId)) return null;
+  const head = h("button", { class: "d-cands-head", "aria-expanded": String(S.candOpen),
+    onclick: () => { S.candOpen = !S.candOpen; paintMemo(); } },
+    icon(S.candOpen ? "chevron-down" : "chevron-right"), "確認候補", h("span", { class: "n" + (n ? "" : " zero") }, `${n}件`));
+  if (!S.candOpen) return h("div", { class: "d-cands" }, head);
+  const first = c.open.slice(0, SHOW_CANDIDATES);
+  const rest = c.open.slice(SHOW_CANDIDATES);
+  return h("div", { class: "d-cands" }, head,
+    S.asking && !S.asking.issueId && askBox(),
+    first.map(candCard),
+    rest.length > 0 && h("button", { class: "d-more", onclick: () => { S.showMore = !S.showMore; paintMemo(); } },
+      S.showMore ? "閉じる" : `ほか ${rest.length}件`),
+    S.showMore && rest.map(candCard),
+    c.asked.map((x) => h("div", { class: "d-wait" }, `回答待ち:「${x.source_quote || x.question_doctor}」`)),
+    c.held.length > 0 && h("button", { class: "d-more", onclick: () => { S.showHeld = !S.showHeld; paintMemo(); } },
+      S.showHeld ? "保留中を閉じる" : `保留中 ${c.held.length}件`),
+    S.showHeld && c.held.map(candCard));
+}
+
+function candCard(c) {
+  const k = `${c.mid}:${c.candidate_id}`;
+  const editing = S.editing === k;
+  const busy = S.busy.has(k);
+  const send = () => act(k, async () => {
+    const q = { messageId: c.mid, candidateId: c.candidate_id };
+    if (editing) {
+      const text = S.editText.trim();
+      if (!text) return;
+      q.questionDoctor = text;
+    }
+    questionToast(await unsaid.sendQuestion(sid, q));
+    S.editing = null;
+  });
+  const update = (action) => act(k, () => unsaid.updateCandidate(sid, c.mid, c.candidate_id, action));
+  const ta = editing && h("textarea", { id: `edit-${k}`, rows: 2, "aria-label": "確認質問を編集",
+    oninput: (e) => { S.editText = e.target.value; } });
+  if (ta) ta.value = S.editText;
+  return h("div", { class: "d-cand" },
+    h("div", { class: "q" }, c.source_quote && h("mark", { lang: S.session?.patientLang }, c.source_quote),
+      c.meaning_doctor && ` → ${c.meaning_doctor}`, c.priority === "high" && [" ", tag("重要", "warn")]),
+    c.reason && h("div", { class: "why" }, c.reason),
+    c.status === "unresolved" && h("div", { class: "note" }, "患者は確定できませんでした（分からない・どれでもない）"),
+    editing ? ta : h("div", { class: "ask" }, `「${c.question_doctor}」`),
+    editing ? h("div", { class: "why" }, "編集した質問は、患者の言語に訳して送ります（選択肢は付けません）")
+      : c.options_doctor?.length > 0 && h("div", { class: "opts" }, `選択肢: ${c.options_doctor.join(" / ")}`),
+    h("div", { class: "acts" },
+      h("button", { class: "btn-small primary", disabled: busy, onclick: send },
+        c.status === "unresolved" ? "聞き直す" : "質問を送る"),
+      editing
+        ? h("button", { class: "btn-link", onclick: () => { S.editing = null; paintMemo(); } }, "やめる")
+        : h("button", { class: "btn-link", onclick: () => { S.editing = k; S.editText = c.question_doctor; paintMemo();
+            document.getElementById(`edit-${k}`)?.focus(); } }, "編集"),
+      c.status === "proposed" && h("button", { class: "btn-link", disabled: busy, onclick: () => update("hold") }, "保留"),
+      c.status === "held" && h("button", { class: "btn-link", disabled: busy, onclick: () => update("restore") }, "戻す"),
+      h("button", { class: "btn-link", disabled: busy, onclick: () => update("dismiss") }, "無視")));
+}
+
+// 編集・自作した確認質問は、医師のほかの発言と同じく照合（Safety Gate）を通る。届いたかどうかで伝え方を変える
+// （意味の確認・照合の確認が要るときは、会話の「確認質問」の吹き出しの下にカードが出る）
+function questionToast(r) {
+  toast(!r?.status || r.status === "sent" ? "患者のスマホに質問を送りました"
+    : r.status === "stopped" ? "質問は送られませんでした"
+    : "質問はまだ送っていません。会話の確認質問の下で確認してください");
+}
+
+// 医師が自分で書く確認質問（問診メモの項目から）。患者の言語に訳して送り、答えをその項目に結びつける
+function askBox() {
+  const a = S.asking;
+  const k = `ask:${a.issueId ?? `${a.mid}:${a.fid}`}`;
+  const ta = h("textarea", { id: "ask-text", rows: 2, placeholder: "質問を日本語で入力", "aria-label": "患者への質問",
+    oninput: (e) => { a.text = e.target.value; } });
+  ta.value = a.text;
+  const send = () => act(k, async () => {
+    if (!a.text.trim()) return;
+    await unsaid.sendQuestion(sid, a.issueId ? { issueId: a.issueId, questionDoctor: a.text.trim() }
+      : { messageId: a.mid, factId: a.fid, questionDoctor: a.text.trim() }).then(questionToast);
+    S.asking = null;
+  });
+  return h("div", { class: "d-cand d-ask" },
+    h("div", { class: "q" }, `「${a.label}」について質問`), ta,
+    h("div", { class: "acts" },
+      h("button", { class: "btn-small primary", disabled: S.busy.has(k), onclick: send }, "質問を送る"),
+      h("button", { class: "btn-link", onclick: () => { S.asking = null; paintMemo(); } }, "やめる")));
+}
+
+// 「カルテにコピー」: 問診メモと同じデータからカルテ用の文章を作り、医師が直してからコピーする
+// （記録は診察終了で消えるので、残す分はここで写す）
+function openKarte() {
+  const text = karteText(S.msgs, S.session, new Date(), S.session?.audit);
+  if (!text) { toast("まだ問診メモがありません"); return; }
+  const ta = h("textarea", { "aria-label": "カルテ用の文章" });
+  ta.value = text;
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(ta.value); toast("コピーしました。カルテに貼り付けてください"); dlg.close(); }
+    catch (e) { ta.select(); fail(e); }
+  };
+  const dlg = h("dialog", { class: "d-sheet", "aria-label": "カルテ用の文章", onclose: () => dlg.remove() },
+    h("div", { class: "d-sheet-in" },
+      h("h2", {}, "カルテ用の文章"),
+      h("p", {}, "問診メモから作りました（AI の抽出は原文に実在する部分だけ）。必要に応じて直してからコピーしてください。"),
+      ta,
+      h("div", { class: "acts" },
+        h("button", { class: "btn-quiet", onclick: () => dlg.close() }, "閉じる"),
+        h("button", { class: "btn-primary", onclick: copy }, "コピー"))));
+  document.body.append(dlg);
+  dlg.showModal();
+  ta.focus();
+  ta.setSelectionRange(0, 0);
 }
 
 function refresh() {
   const log = app.querySelector(".d-log");
+  if (!log) return;
   const keep = log.scrollTop;
   log.replaceChildren(...renderLog());
   log.scrollTop = keep;

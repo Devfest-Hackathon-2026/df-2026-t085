@@ -1,0 +1,56 @@
+{
+  "type": "object",
+  "properties": {
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": ["chief_complaint", "symptom", "associated_symptom", "onset", "duration", "frequency", "course",
+                     "quality", "location", "severity", "modifying_factor", "history", "medication", "allergy",
+                     "background", "psychological", "other"]
+          },
+          "normalized_meaning": { "type": "string" },
+          "source_quote": { "type": "string" },
+          "polarity": { "type": "string", "enum": ["present", "denied", "uncertain"] },
+          "about": { "type": "string" }
+        },
+        "required": ["category", "normalized_meaning", "source_quote", "polarity", "about"]
+      }
+    },
+    "ambiguities": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "properties": {
+          "source_quote": { "type": "string" },
+          "meaning_doctor": { "type": "string" },
+          "reason": { "type": "string" },
+          "unresolved": { "type": "string" },
+          "priority": { "type": "string", "enum": ["high", "medium", "low"] },
+          "clinically_significant": { "type": "boolean" },
+          "question_patient": { "type": "string" },
+          "question_doctor": { "type": "string" },
+          "options_patient": { "type": "array", "maxItems": 4, "items": { "type": "string" } },
+          "options_doctor": { "type": "array", "maxItems": 4, "items": { "type": "string" } }
+        },
+        "required": ["source_quote", "meaning_doctor", "reason", "unresolved", "priority", "clinically_significant",
+                     "question_patient", "question_doctor", "options_patient", "options_doctor"]
+      }
+    },
+    "resolution": {
+      "type": "object",
+      "properties": {
+        "applies": { "type": "boolean" },
+        "resolves": { "type": "string", "enum": ["yes", "partly", "no"] },
+        "meaning_doctor": { "type": "string" },
+        "source_quote": { "type": "string" }
+      },
+      "required": ["applies", "resolves", "meaning_doctor", "source_quote"]
+    }
+  },
+  "required": ["facts", "ambiguities", "resolution"]
+}

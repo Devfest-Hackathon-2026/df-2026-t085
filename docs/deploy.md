@@ -25,7 +25,7 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregi
 Cloud Run が Gemini（Vertex AI）と Firestore を使うための「ロボット用アカウント」。必要な権限だけを付ける。
 
 ```powershell
-gcloud iam service-accounts create unsaid-api --display-name "UNSAID API"
+gcloud iam service-accounts create unsaid-api --display-name "Kumu API"
 
 gcloud projects add-iam-policy-binding unsaid-devfest --member "serviceAccount:unsaid-api@unsaid-devfest.iam.gserviceaccount.com" --role roles/aiplatform.user
 
@@ -75,6 +75,20 @@ gcloud firestore fields ttls update expireAt --collection-group=messages --enabl
 ```
 
 普段は医師の「診察を終える」で、その場で session と発言をすべて消す（`POST /end`）。
+
+## Kumu 2.0（USSA）を本番に出すとき
+
+main に統合しただけでは本番は変わらない（自動のデプロイは無い）。本番に出すときは、次をチームで決めてから行う。
+
+- **API・Firestore のルール・画面を同じコミットで、続けて切り替える。** 新しいルールは、端末が `status: sent` を書くこと（Safety Gate の迂回）を禁止し、
+  端末が作る問診・発言に `expireAt` を必須にした。以前の画面（新しいルールの前の main）はこのルールでは問診を作れず、患者が送れない。
+  逆に新しい画面は以前の API では動かない（`/send`・`/intent` などが無い）。問診をしていない時間に、API → ルール → 画面の順に続けて出す。
+- 出したら、`GET /health` の `commit` が出したコミットと同じかを確かめる（Cloud Run に `--update-env-vars BUILD_COMMIT=<git の短い hash>` を渡す）。
+- 新しい環境変数は必須のものは無い。**`STAGING_ACCESS_SHA256` と `DAILY_CALL_LIMIT` は本番では設定しない**（設定すると参加コードを聞かれる・1 日の上限で止まる。
+  これらは独立ステージング用。本番の画面は参加コードを聞かない: `web/firebase-config.js` は `unsaid-devfest.web.app` ではチームの本番の設定を使う）。
+- モデルは `GEMINI_MODEL`（または `UNSAID_MODEL`）、役割ごとに `TRANSLATE_MODEL`・`SOURCE_MODEL`・`VERIFY_MODEL`・`AUDIT_MODEL`（空なら同じモデル）。
+- `--timeout 120` のまま（解析・照合・訳し直しの最悪の時間より長く）。Gemini の呼び出しは 1 発言あたり以前より多い（意図・訳・照合・問診メモ・監査）。
+- 先に本番と分けた環境（docs/staging.md）で通しておく。
 
 ## 調整できる環境変数
 

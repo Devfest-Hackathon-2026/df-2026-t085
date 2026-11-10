@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "properties": {
+    "points": {
+      "type": "array",
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "properties": {
+          "doctor_point": { "type": "string" },
+          "patient_understanding": { "type": "string" },
+          "verdict": { "type": "string", "enum": ["match", "mismatch", "missing", "unclear"] },
+          "explanation": { "type": "string" },
+          "restatement_quote": { "type": "string" }
+        },
+        "required": ["doctor_point", "patient_understanding", "verdict", "explanation", "restatement_quote"]
+      }
+    },
+    "suggested_reexplanation": { "type": "string" }
+  },
+  "required": ["points", "suggested_reexplanation"]
+}

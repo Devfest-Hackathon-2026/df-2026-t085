@@ -10,7 +10,7 @@ export function h(tag, attrs = {}, ...children) {
     else if (k === "html") e.innerHTML = v;
     else e.setAttribute(k, v === true ? "" : v);
   }
-  for (const c of children.flat()) if (c != null && c !== false) e.append(c);
+  for (const c of children.flat(Infinity)) if (c != null && c !== false) e.append(c);
   return e;
 }
 
@@ -31,7 +31,7 @@ export function highlight(original, target) {
 // 通信が切れる・サーバーが途中で落ちると status が analyzing（や回答済みの clarifying）のまま変わらず、
 // 画面が回り続けてしまう。同じ発言・同じ待ち状態を最初に見た時刻を覚え、STUCK_MS を過ぎるか、
 // API の呼び出しが失敗したと分かったら（fail）「もう一度」を出す。onTick は数秒ごとに呼ぶ（画面を描き直す）
-export const STUCK_MS = 25000;
+export const STUCK_MS = 45000; // 意図の解析・訳の照合（必要なら訳し直し）まで含めた待ち時間の目安
 export function stuckWatch(onTick, everyMs = 3000) {
   const since = new Map();
   const failed = new Set();

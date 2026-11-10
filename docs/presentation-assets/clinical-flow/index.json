@@ -1,0 +1,615 @@
+{
+ "captured_at": "2026-11-10 04:50 JST",
+ "scenario": "main",
+ "ai": "live",
+ "ai_note": "本物の Gemini（評価用のプロジェクト kumu-devfest-2026）。Firestore はメモリ上の偽物",
+ "inputs": {
+  "first": "医生，我今天在车站突然心慌，胸口像堵住了一样，浑身发虚。我以为只是水土不服，可坐下来休息了一会儿，还是觉得不太对劲。",
+  "answer1": "我感觉心脏突然跳得很快，胸口也很闷。坐着休息了大约十分钟，还是没有好转。",
+  "followup": "今も胸が詰まる感じや息苦しさは続いていますか？意識が遠くなったり、気を失ったりしたことはありますか？",
+  "answer2": "现在胸口还是闷，呼吸有点费力。没有晕倒过，也没有失去意识。",
+  "explain": "今はそのまま座っていてください。すぐに医療スタッフを呼びます。ご自身で移動せず、スタッフの案内を待ってください。",
+  "tb_wrong": "我先自己走去找护士，对吗？",
+  "tb_right": "我留在这里坐着等，医生会马上叫医护人员过来，我不会自己走动。"
+ },
+ "failed_at": null,
+ "page_errors": [
+  "patient console: Failed to load resource: the server responded with a status of 403 (Forbidden)",
+  "patient console: Failed to load resource: the server responded with a status of 403 (Forbidden)",
+  "patient console: Failed to load resource: the server responded with a status of 403 (Forbidden)",
+  "patient console: Failed to load resource: the server responded with a status of 403 (Forbidden)",
+  "doctor console: Failed to load resource: the server responded with a status of 403 (Forbidden)",
+  "doctor console: Failed to load resource: the server responded with a status of 403 (Forbidden)"
+ ],
+ "size_mismatch": [],
+ "notes": [
+  "session id: 8e3cf18b4dc6455181bf（医師・患者とも同じ）",
+  "最初の訴え: Source Agent は意図の確認を求めなかった（心慌などの医学的な曖昧さは、翻訳前の意図ではなく、届いた後に Meaning Engine が医師への確認候補にする設計。患者に先に聞かない）",
+  "質問の照合中の表示は撮れなかった",
+  "この時点で Conversation Auditor の未解決事項は出なかった",
+  "追加の質問の照合中の表示は撮れなかった",
+  "再説明の文（AI の提案が入力欄に入り、医師が送った）: ご自身では動かないで、そのまま座っていてください。すぐにスタッフを呼びますので、案内があるまでお待ちください。"
+ ],
+ "shots": [
+  {
+   "no": 0,
+   "file": "00-doctor-start.png",
+   "device": "doctor",
+   "action": "医師がアプリを開いた直後",
+   "state": "入力前（問診の開始前）",
+   "info": "「問診を始める」だけがある",
+   "ai": "live",
+   "note": "サービス名を Kumu に変えた後に撮り直した（2026-11-10。AI を使わない画面。大きさ・構図は同じ）"
+  },
+  {
+   "no": 1,
+   "file": "01-doctor-qr.png",
+   "device": "doctor",
+   "action": "「問診を始める」を押した",
+   "state": "QR を表示（患者の参加待ち）",
+   "info": "患者がスマホで読む QR と説明",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 2,
+   "file": "02-patient-join-language.png",
+   "device": "patient",
+   "action": "QR のリンクを開いた",
+   "state": "参加前（言語の選択）",
+   "info": "患者の言語を選ぶ",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 3,
+   "file": "03-patient-consent.png",
+   "device": "patient",
+   "action": "中文を選んだ",
+   "state": "同意前",
+   "info": "AI で訳すこと・間違えうること・診断しないこと・終わったら消えること",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 4,
+   "file": "04-patient-connected.png",
+   "device": "patient",
+   "action": "「同意并开始」を押した",
+   "state": "接続済み・入力前",
+   "info": "話す画面（マイクと入力欄）",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 5,
+   "file": "05-doctor-connected.png",
+   "device": "doctor",
+   "action": "患者が参加した",
+   "state": "接続済み・入力前",
+   "info": "QR が閉じ、「患者（中国語）と接続中」",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 6,
+   "file": "06-patient-first-typed.png",
+   "device": "patient",
+   "action": "最初の訴えを入力（まだ送らない）",
+   "state": "入力済み・未送信",
+   "info": "医生，我今天在车站突然心慌，胸口像堵住了一样，浑身发虚。我以为只是水土不服，可坐下来休息了一会儿，还是觉得不太对劲。",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 7,
+   "file": "07-patient-first-checking.png",
+   "device": "patient",
+   "action": "「发送」を押した直後",
+   "state": "処理中（意図の解析・翻訳・照合）",
+   "info": "患者には確認中の表示。まだ医師に届いていない",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 8,
+   "file": "08-doctor-first-pending.png",
+   "device": "doctor",
+   "action": "患者が送信した直後の医師の画面",
+   "state": "処理中（医師にはまだ届かない）",
+   "info": "医師には「確認中」の表示だけ。訳は未確定なので出ない",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 9,
+   "file": "09-doctor-first-received.png",
+   "device": "doctor",
+   "action": "患者の訴えが届いた",
+   "state": "受信済み（照合済みの訳）",
+   "info": "日本語訳・照合の状態・原文に根拠のある問診メモ（未確認）・確認候補",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 10,
+   "file": "10-patient-first-delivered.png",
+   "device": "patient",
+   "action": "送信後の患者の画面",
+   "state": "送信済み・医師が表示（医生已读）",
+   "info": "医師が読んだ内容（訳を中国語に戻したもの）と「不对？重新说」",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 11,
+   "file": "11-doctor-candidates.png",
+   "device": "doctor",
+   "action": "問診メモの確認候補を見る",
+   "state": "確認候補（AI の提案。まだ聞いていない）",
+   "info": "曖昧な語・なぜ確認が必要か・質問と選択肢。送る／編集／保留／無視は医師が選ぶ",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 12,
+   "file": "12-doctor-evidence.png",
+   "device": "doctor",
+   "action": "問診メモの項目を開いた",
+   "state": "未確認（根拠の表示）",
+   "info": "原文の該当箇所・訳・状態・履歴",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 13,
+   "file": "13-doctor-question-edit.png",
+   "device": "doctor",
+   "action": "確認候補の「編集」を押した",
+   "state": "医師が質問を選び・編集中（未送信）",
+   "info": "AI の質問案を医師が直せる。送ると Safety Gate を通る",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 14,
+   "file": "14-doctor-question-sent.png",
+   "device": "doctor",
+   "action": "質問が届いた",
+   "state": "送信済み",
+   "info": "「確認質問」の吹き出しと送信済み",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 15,
+   "file": "15-patient-question-received.png",
+   "device": "patient",
+   "action": "医師の質問が届いた",
+   "state": "受信済み・回答前",
+   "info": "中国語の質問・選択肢・分からない・どれでもない・自分の言葉で",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 16,
+   "file": "16-patient-answer1-typed.png",
+   "device": "patient",
+   "action": "質問への答えを入力（まだ送らない）",
+   "state": "入力済み・未送信",
+   "info": "我感觉心脏突然跳得很快，胸口也很闷。坐着休息了大约十分钟，还是没有好转。",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 17,
+   "file": "17-patient-answer1-checking.png",
+   "device": "patient",
+   "action": "「发送」を押した直後",
+   "state": "処理中（意図の解析・翻訳・照合）",
+   "info": "患者には確認中の表示。まだ医師に届いていない",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 18,
+   "file": "18-doctor-answer1-pending.png",
+   "device": "doctor",
+   "action": "患者が送信した直後の医師の画面",
+   "state": "処理中（医師にはまだ届かない）",
+   "info": "医師には「確認中」の表示だけ。訳は未確定なので出ない",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 19,
+   "file": "19-doctor-answer1-received.png",
+   "device": "doctor",
+   "action": "患者の答えが届いた",
+   "state": "受信済み（患者回答）",
+   "info": "答えの訳・「患者が回答」・問診メモの更新（医師はまだ確認していない）",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 20,
+   "file": "20-patient-answer1-delivered.png",
+   "device": "patient",
+   "action": "答えを送った後",
+   "state": "送信済み",
+   "info": "医師が読んだ内容と「修改回答」",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 21,
+   "file": "21-doctor-followup-typed.png",
+   "device": "doctor",
+   "action": "「胸部の閉塞感・圧迫感」について医師が自分で質問を書いた",
+   "state": "入力済み・未送信",
+   "info": "今も胸が詰まる感じや息苦しさは続いていますか？意識が遠くなったり、気を失ったりしたことはありますか？",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 22,
+   "file": "22-doctor-followup-sent.png",
+   "device": "doctor",
+   "action": "追加の質問が届いた",
+   "state": "送信済み",
+   "info": "",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 23,
+   "file": "23-patient-followup-received.png",
+   "device": "patient",
+   "action": "追加の質問が届いた",
+   "state": "受信済み・回答前",
+   "info": "",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 24,
+   "file": "24-patient-answer2-typed.png",
+   "device": "patient",
+   "action": "追加の質問への答えを入力（まだ送らない）",
+   "state": "入力済み・未送信",
+   "info": "现在胸口还是闷，呼吸有点费力。没有晕倒过，也没有失去意识。",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 25,
+   "file": "25-patient-answer2-checking.png",
+   "device": "patient",
+   "action": "「发送」を押した直後",
+   "state": "処理中（意図の解析・翻訳・照合）",
+   "info": "患者には確認中の表示。まだ医師に届いていない",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 26,
+   "file": "26-doctor-answer2-pending.png",
+   "device": "doctor",
+   "action": "患者が送信した直後の医師の画面",
+   "state": "処理中（医師にはまだ届かない）",
+   "info": "医師には「確認中」の表示だけ。訳は未確定なので出ない",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 27,
+   "file": "27-doctor-answer2-received.png",
+   "device": "doctor",
+   "action": "患者の答えが届いた",
+   "state": "受信済み（患者回答）",
+   "info": "胸の症状が続いていること・失神はないこと",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 28,
+   "file": "28-doctor-memo-after-questions.png",
+   "device": "doctor",
+   "action": "問診メモの下の方（確認候補・未解決事項）",
+   "state": "問診メモの更新後",
+   "info": "症状・経過・本人の解釈・未確認の項目・未解決事項",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 29,
+   "file": "29-doctor-explain-typed.png",
+   "device": "doctor",
+   "action": "医師が説明を入力（まだ送らない）",
+   "state": "入力済み・未送信",
+   "info": "今はそのまま座っていてください。すぐに医療スタッフを呼びます。ご自身で移動せず、スタッフの案内を待ってください。",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 30,
+   "file": "30-doctor-explain-checking.png",
+   "device": "doctor",
+   "action": "「送る」を押した直後",
+   "state": "処理中（意図の解析・翻訳・照合）",
+   "info": "医師の発言は「確認中…／訳を照合中…」。患者にはまだ届いていない",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 31,
+   "file": "31-doctor-explain-sent.png",
+   "device": "doctor",
+   "action": "説明が届いた",
+   "state": "送信済み",
+   "info": "照合済みの中国語訳で届く",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 32,
+   "file": "32-patient-explain-received.png",
+   "device": "patient",
+   "action": "医師の説明が届いた",
+   "state": "受信済み",
+   "info": "中国語の説明",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 33,
+   "file": "33-patient-teachback-prompt.png",
+   "device": "patient",
+   "action": "医師が「理解を確認」を押した",
+   "state": "理解の確認（回答前）",
+   "info": "自分の言葉で言い直すよう頼まれる",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 34,
+   "file": "34-patient-teachback-wrong-typed.png",
+   "device": "patient",
+   "action": "理解の言い直し（誤り）を入力（まだ送らない）",
+   "state": "入力済み・未送信",
+   "info": "我先自己走去找护士，对吗？",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 35,
+   "file": "35-patient-teachback-wrong-checking.png",
+   "device": "patient",
+   "action": "「发送」を押した直後",
+   "state": "処理中（意図の解析・翻訳・照合）",
+   "info": "患者には確認中の表示。まだ医師に届いていない",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 36,
+   "file": "36-doctor-teachback-wrong-pending.png",
+   "device": "doctor",
+   "action": "患者が送信した直後の医師の画面",
+   "state": "処理中（医師にはまだ届かない）",
+   "info": "医師には「確認中」の表示だけ。訳は未確定なので出ない",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 37,
+   "file": "37-doctor-teachback-result.png",
+   "device": "doctor",
+   "action": "患者の言い直しが届いた",
+   "state": "意味不一致",
+   "info": "説明・患者の理解・食い違う点。再説明／理解を確認済みにする（医師が決める）",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 38,
+   "file": "38-doctor-auditor-mismatch.png",
+   "device": "doctor",
+   "action": "未解決事項を見る",
+   "state": "未解決事項（理解の相違）",
+   "info": "根拠の発言つき",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 39,
+   "file": "39-doctor-reexplain-typed.png",
+   "device": "doctor",
+   "action": "医師が再説明（AI の提案を入力欄で確認）を入力（まだ送らない）",
+   "state": "入力済み・未送信",
+   "info": "ご自身では動かないで、そのまま座っていてください。すぐにスタッフを呼びますので、案内があるまでお待ちください。",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 40,
+   "file": "40-doctor-reexplain-checking.png",
+   "device": "doctor",
+   "action": "「送る」を押した直後",
+   "state": "処理中（意図の解析・翻訳・照合）",
+   "info": "医師の発言は「確認中…／訳を照合中…」。患者にはまだ届いていない",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 41,
+   "file": "41-doctor-reexplain-sent.png",
+   "device": "doctor",
+   "action": "再説明が届いた",
+   "state": "送信済み",
+   "info": "",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 42,
+   "file": "42-patient-reexplain-received.png",
+   "device": "patient",
+   "action": "再説明が届いた",
+   "state": "受信済み",
+   "info": "",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 43,
+   "file": "43-patient-teachback-prompt2.png",
+   "device": "patient",
+   "action": "医師がもう一度「理解を確認」",
+   "state": "理解の確認（回答前）",
+   "info": "",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 44,
+   "file": "44-patient-teachback-right-typed.png",
+   "device": "patient",
+   "action": "理解の言い直し（正しい）を入力（まだ送らない）",
+   "state": "入力済み・未送信",
+   "info": "我留在这里坐着等，医生会马上叫医护人员过来，我不会自己走动。",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 45,
+   "file": "45-patient-teachback-right-checking.png",
+   "device": "patient",
+   "action": "「发送」を押した直後",
+   "state": "処理中（意図の解析・翻訳・照合）",
+   "info": "患者には確認中の表示。まだ医師に届いていない",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 46,
+   "file": "46-doctor-teachback-right-pending.png",
+   "device": "doctor",
+   "action": "患者が送信した直後の医師の画面",
+   "state": "処理中（医師にはまだ届かない）",
+   "info": "医師には「確認中」の表示だけ。訳は未確定なので出ない",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 47,
+   "file": "47-doctor-teachback-result2.png",
+   "device": "doctor",
+   "action": "正しい言い直しが届いた",
+   "state": "理解一致",
+   "info": "",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 48,
+   "file": "48-doctor-teachback-confirmed.png",
+   "device": "doctor",
+   "action": "医師が「理解を確認済みにする」",
+   "state": "確認済み（医師）",
+   "info": "前の相違も解決になる",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 49,
+   "file": "49-doctor-confirm-before.png",
+   "device": "doctor",
+   "action": "問診メモの項目を開いた",
+   "state": "医師確認待ち",
+   "info": "原文・訳・状態・履歴（患者の答え）",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 50,
+   "file": "50-doctor-confirm-after.png",
+   "device": "doctor",
+   "action": "「確認済みにする」を押した",
+   "state": "確認済み（医師）",
+   "info": "履歴に「医師が確認」",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 51,
+   "file": "51-doctor-summary-top.png",
+   "device": "doctor",
+   "action": "最終の問診メモ（上）",
+   "state": "最終",
+   "info": "症状・経過・本人の解釈・医師確認済み/患者回答/未確認",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 52,
+   "file": "52-doctor-summary-bottom.png",
+   "device": "doctor",
+   "action": "最終の問診メモ（下）",
+   "state": "最終",
+   "info": "未解決事項・確認候補・カルテにコピー・診察を終える",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 53,
+   "file": "53-doctor-karte.png",
+   "device": "doctor",
+   "action": "「カルテにコピー」を押した",
+   "state": "カルテ用の下書き（医師が編集してから貼る）",
+   "info": "",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 54,
+   "file": "54-doctor-karte-bottom.png",
+   "device": "doctor",
+   "action": "カルテ用の文章の下の方",
+   "state": "カルテ用の下書き",
+   "info": "未確認事項・理解の確認",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 55,
+   "file": "55-patient-before-end.png",
+   "device": "patient",
+   "action": "診察の終わりの前の患者の画面",
+   "state": "受信済み",
+   "info": "",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 56,
+   "file": "56-doctor-ended.png",
+   "device": "doctor",
+   "action": "「診察を終える」を押した",
+   "state": "終了（記録を削除）",
+   "info": "",
+   "ai": "live",
+   "note": ""
+  },
+  {
+   "no": 57,
+   "file": "57-patient-ended.png",
+   "device": "patient",
+   "action": "医師が診察を終えた",
+   "state": "終了（記録を削除）",
+   "info": "患者の画面も終了",
+   "ai": "live",
+   "note": ""
+  }
+ ]
+}

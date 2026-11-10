@@ -3,7 +3,13 @@ rules_version = '2';
 // Cloud Run（Admin SDK、ルールの対象外）だけが書く。端末が書けるのは下の決めた項目だけ。
 //
 // 役割: session を作った人（members[0]）が医師、QR で参加した人（members[1]）が患者。
-// 医師の発言は医師だけ、患者の発言・回答・送信は患者だけが書ける（相手になりすませない）。
+// 医師の発言は医師だけ、患者の発言・回答は患者だけが書ける（相手になりすませない）。
+//
+// Safety Gate（ussa.py / main.py）: 発言を「送信済み（sent）」にできるのはサーバーだけ。端末は発言を作る（＝送信操作）ことしか
+// できず、意図の解析・訳の検証・最終チェックを飛ばして相手に届けることはできない。
+// 注意: 以前の画面（main ブランチ）は患者の端末が直接 status を sent にしていたので、このルールを (default) に公開すると
+// 以前の画面では患者が送れなくなる。公開するのはステージングの staging データベースだけ（docs/staging.md）。
+// 本番に入れるときは、新しい画面と同時に切り替える。
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
@@ -23,13 +29,21 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
     }
     function patientLangs() { return ['en', 'zh-CN', 'vi']; }
+    // 端末が作る文書にも、最初から消える期限（TTL の expireAt）を付けさせる。API が一度も呼ばれなくても残らないように。
+    // 端末の時計のずれを見込んで「今より後、48 時間以内」。以後はサーバーが書くたびに延ばす（main._expire_at）
+    function expiresSoon() {
+      return request.resource.data.expireAt is timestamp
+        && request.resource.data.expireAt > request.time
+        && request.resource.data.expireAt <= request.time + duration.value(48, 'h');
+    }
 
     match /sessions/{sessionId} {
       allow read: if signedIn() && request.auth.uid in resource.data.members;
       // 医師が作る: 自分1人だけを members に入れ、patientLang は null（患者が参加時に決める）。
       // createdAt はサーバーの時刻だけ（端末が未来の時刻を書いて「30分以内」をすり抜けられないように）
       allow create: if signedIn()
-        && request.resource.data.keys().hasOnly(['patientLang', 'doctorLang', 'members', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['patientLang', 'doctorLang', 'members', 'createdAt', 'expireAt'])
+        && expiresSoon()
         && request.resource.data.members == [request.auth.uid]
         && request.resource.data.patientLang == null
         && request.resource.data.doctorLang == 'ja'
@@ -48,16 +62,31 @@ service cloud.firestore {
         allow read: if isMember(sessionId);
 
         // 発言を作る: 本文と from だけ。status は必ず analyzing から、createdAt はサーバーの時刻（並び順に使う）。
-        // from は自分の役割と同じでないといけない
+        // from は自分の役割と同じでないといけない。
+        // 患者だけは、医師の確認質問・理解の確認への答えとして replyTo（質問の id）と answer（{type, index?}）を付けられる。
+        // 質問が本当に医師の確認質問か・選択肢が合うかは API（main.py の _reply_target）が確かめる。
+        // 確認質問・理解の確認の発言そのもの（kind 付き）と、意味の解析・状態（meaning / teachback）はサーバーだけが書く。
         allow create: if isMember(sessionId)
-          && request.resource.data.keys().hasOnly(['from', 'original', 'status', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['from', 'original', 'status', 'createdAt', 'expireAt', 'replyTo', 'answer'])
+          && expiresSoon()
           && ((request.resource.data.from == 'doctor' && isDoctor(sessionId))
             || (request.resource.data.from == 'patient' && isPatient(sessionId)))
           && request.resource.data.status == 'analyzing'
           && request.resource.data.createdAt == request.time
           && request.resource.data.original is string
           && request.resource.data.original.size() > 0
-          && request.resource.data.original.size() <= 1000;
+          && request.resource.data.original.size() <= 1000
+          && (!('replyTo' in request.resource.data) || (request.resource.data.from == 'patient'
+            && request.resource.data.replyTo is string
+            && request.resource.data.replyTo.size() > 0 && request.resource.data.replyTo.size() <= 64))
+          && (!('answer' in request.resource.data) || (request.resource.data.from == 'patient'
+            && 'replyTo' in request.resource.data
+            && request.resource.data.answer is map
+            && request.resource.data.answer.keys().hasOnly(['type', 'index'])
+            && request.resource.data.answer.type in ['option', 'unsure', 'none', 'free_text']
+            && (!('index' in request.resource.data.answer)
+              || (request.resource.data.answer.index is int && request.resource.data.answer.index >= 0
+                && request.resource.data.answer.index < 4))));
 
         allow update: if isMember(sessionId) && (
           // 患者: 自分の発言の確認質問への回答（clarification.answer だけを書き換える）
@@ -65,11 +94,8 @@ service cloud.firestore {
             && resource.data.status in ['clarifying', 'error'] && onlyChanges(['clarification'])
             && request.resource.data.clarification.diff(resource.data.clarification).affectedKeys().hasOnly(['answer'])
             && request.resource.data.clarification.answer.type in ['option', 'free_text', 'unsure'])
-          // 患者: 自分の発言の逆翻訳を確認して送信
-          || (isPatient(sessionId) && resource.data.from == 'patient'
-            && resource.data.status == 'confirmed' && request.resource.data.status == 'sent'
-            && onlyChanges(['status', 'sentAt']))
-          // 医師: 患者の発言を受け取った
+          // （端末が status を sent にする書き込みは許さない。送るのは Safety Gate を通したサーバーだけ）
+          // 医師: 患者の発言を受け取った（既読の印。送信済みの発言にだけ）
           || (isDoctor(sessionId) && resource.data.from == 'patient'
             && resource.data.status == 'sent' && request.resource.data.status == 'received'
             && onlyChanges(['status', 'receivedAt']))
