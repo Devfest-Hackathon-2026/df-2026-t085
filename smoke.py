@@ -111,6 +111,13 @@ def sign_in(key, who):
     return body["idToken"], body["localId"]
 
 
+def sign_in_doctor(key, email, password):
+    code, body = http("POST", f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={key}",
+                      {"email": email, "password": password, "returnSecureToken": True})
+    must(code == 200, "医師: メール＋パスワードでログイン（Authentication でアカウントを作ったか確認）", code, body)
+    return body["idToken"], body["localId"]
+
+
 def call(api, path, sid, mid, token, step):
     t = time.time()
     code, body = http("POST", api.rstrip("/") + path, {"sessionId": sid, "messageId": mid}, token)
@@ -125,12 +132,16 @@ def main():
     p.add_argument("--lang", default="en", help="患者の言語（en / zh-CN / vi）")
     p.add_argument("--text", default="I've had a headache for a while.", help="患者の発言")
     p.add_argument("--doctor", default="この薬は1日3回、食後に飲んでください。", help="医師の発言")
+    p.add_argument("--doctor-email", required=True, help="Firebase Auth に作った医師のテストアカウント")
+    p.add_argument("--doctor-password", required=True)
     a = p.parse_args()
 
     print("1. ログインと session")
     pt, puid = sign_in(a.key, "患者")
-    dt, duid = sign_in(a.key, "医師")
+    dt, duid = sign_in_doctor(a.key, a.doctor_email, a.doctor_password)
     sid = "smoke-" + uuid.uuid4().hex[:8]
+    doc_create("sessions", sid + "-anon", {"patientLang": None, "doctorLang": "ja", "members": [puid]}, pt,
+               "匿名ログインでは session を作れない（Gemini を呼び放題にさせない）", expect=403)
     doc_create("sessions", sid, {"patientLang": None, "doctorLang": "ja", "members": [duid]}, dt, "医師が session を作る")
     doc_patch(f"sessions/{sid}", {"members": [duid, puid], "patientLang": a.lang}, ["members", "patientLang"], pt,
               "患者が言語を選んで参加")

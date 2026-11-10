@@ -7,6 +7,9 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
+    // 医師はメール＋パスワードでログインした人だけ（Firebase Auth にこちらで作ったアカウント）。
+    // 匿名ログインは誰でもできるので、匿名のまま session を作って Gemini を呼び放題にはさせない
+    function isDoctorAccount() { return signedIn() && request.auth.token.firebase.sign_in_provider == 'password'; }
     function sess(sessionId) {
       return get(/databases/$(database)/documents/sessions/$(sessionId)).data;
     }
@@ -26,9 +29,9 @@ service cloud.firestore {
 
     match /sessions/{sessionId} {
       allow read: if signedIn() && request.auth.uid in resource.data.members;
-      // 医師が作る: 自分1人だけを members に入れ、patientLang は null（患者が参加時に決める）。
+      // 医師が作る（メール＋パスワードでログインした医師だけ）: 自分1人だけを members に入れ、patientLang は null（患者が参加時に決める）。
       // createdAt はサーバーの時刻だけ（端末が未来の時刻を書いて「30分以内」をすり抜けられないように）
-      allow create: if signedIn()
+      allow create: if isDoctorAccount()
         && request.resource.data.keys().hasOnly(['patientLang', 'doctorLang', 'members', 'createdAt'])
         && request.resource.data.members == [request.auth.uid]
         && request.resource.data.patientLang == null

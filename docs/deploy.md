@@ -60,7 +60,10 @@ gcloud run services logs read unsaid-api --region asia-northeast1 --limit 50
 ## 5. Firebase 側の設定（初回だけ、ブラウザで）
 
 1. [Firebase コンソール](https://console.firebase.google.com/) で `unsaid-devfest` を開く（無ければ「プロジェクトを追加」→ 既存の GCP プロジェクトを選ぶ）。
-2. Authentication → Sign-in method → **匿名** を有効にする。
+2. Authentication → Sign-in method → **匿名** と **メール / パスワード** を有効にする。
+   Authentication → Users →「ユーザーを追加」で医師のテストアカウント（メールとパスワード）を作る。
+   患者はログインなし（匿名）のまま。session を作れるのはメール＋パスワードでログインした医師だけ（`firestore.rules`）なので、
+   匿名ログインだけで session を作って Gemini を呼び放題にはできない。医師のアカウントはこちらで作る（画面からの新規登録はない）。
 3. Firestore Database → ルール → `firestore.rules` の中身を貼り付けて「公開」。
 
 ## 初回だけ: 問診の記録を自動で消す（TTL）
@@ -132,8 +135,8 @@ Firebase の設定（手順 5）が終わったら、本物の Firebase / Firest
 `firestore.rules` が意図どおりに弾くかも一緒に確かめる。`--key` は Firebase コンソールの「プロジェクトの設定 → マイアプリ」にある `apiKey`。
 
 ```powershell
-python smoke.py --api https://unsaid-api-xxxx.asia-northeast1.run.app --key <apiKey>
-python smoke.py --api https://unsaid-api-xxxx.asia-northeast1.run.app --key <apiKey> --lang vi --text "Dạo này tôi hay bị đau đầu."
+python smoke.py --api https://unsaid-api-xxxx.asia-northeast1.run.app --key <apiKey> --doctor-email <医師のメール> --doctor-password <パスワード>
+python smoke.py --api https://unsaid-api-xxxx.asia-northeast1.run.app --key <apiKey> --doctor-email <医師のメール> --doctor-password <パスワード> --lang vi --text "Dạo này tôi hay bị đau đầu."
 ```
 
 最後に「すべて OK」と出れば成功。FAIL のときは、その行の HTTP コードと中身が原因（403 で Firestore と出たらルール、502 なら `gcloud run services logs read ...` のログを見る）。
