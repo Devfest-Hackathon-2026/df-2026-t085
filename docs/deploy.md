@@ -61,7 +61,9 @@ gcloud run services logs read unsaid-api --region asia-northeast1 --limit 50
 
 1. [Firebase コンソール](https://console.firebase.google.com/) で `unsaid-devfest` を開く（無ければ「プロジェクトを追加」→ 既存の GCP プロジェクトを選ぶ）。
 2. Authentication → Sign-in method → **匿名** と **メール / パスワード** を有効にする。
-   Authentication → Users →「ユーザーを追加」で医師のテストアカウント（メールとパスワード）を作る。
+   Authentication → Users →「ユーザーを追加」で医師のテストアカウント（メールとパスワード）を作り、その「ユーザー UID」を
+   Firestore の `doctors` コレクションのドキュメント ID にして1件作る（フィールドは何でもよい。例 `name: test`）。
+   メールでの新規登録は API キーがあれば誰でもできるので、`doctors/{uid}` がある人だけを医師として扱う。
    患者はログインなし（匿名）のまま。session を作れるのはメール＋パスワードでログインした医師だけ（`firestore.rules`）なので、
    匿名ログインだけで session を作って Gemini を呼び放題にはできない。医師のアカウントはこちらで作る（画面からの新規登録はない）。
 3. Firestore Database → ルール → `firestore.rules` の中身を貼り付けて「公開」。

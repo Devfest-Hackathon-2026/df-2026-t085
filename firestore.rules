@@ -7,9 +7,13 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
-    // 医師はメール＋パスワードでログインした人だけ（Firebase Auth にこちらで作ったアカウント）。
-    // 匿名ログインは誰でもできるので、匿名のまま session を作って Gemini を呼び放題にはさせない
-    function isDoctorAccount() { return signedIn() && request.auth.token.firebase.sign_in_provider == 'password'; }
+    // 医師はメール＋パスワードでログインし、かつ doctors/{uid} があるアカウントだけ。
+    // 匿名ログインも、API キーを使ったメールでの新規登録も誰でもできるので、それだけでは session を作れない。
+    // doctors/{uid} は Firebase コンソールでこちらが作る（端末からは読み書きできない）
+    function isDoctorAccount() {
+      return signedIn() && request.auth.token.firebase.sign_in_provider == 'password'
+        && exists(/databases/$(database)/documents/doctors/$(request.auth.uid));
+    }
     function sess(sessionId) {
       return get(/databases/$(database)/documents/sessions/$(sessionId)).data;
     }
@@ -26,6 +30,10 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
     }
     function patientLangs() { return ['en', 'zh-CN', 'vi']; }
+
+    match /doctors/{uid} {
+      allow read, write: if false;
+    }
 
     match /sessions/{sessionId} {
       allow read: if signedIn() && request.auth.uid in resource.data.members;
