@@ -13,7 +13,7 @@ Kumu は Gemini と、プログラムで作った安全装置（Safety Gate）�
 確認で解消できるものは解消し、**解消できないものは確定させずに人に見せます**。診断はしません。
 
 - 画面（医師 PC）：https://unsaid-devfest.web.app/doctor.html （医師はメール＋パスワードでログイン。患者は QR をスマホで読むだけ）
-- この README の機能（Kumu 2.0・USSA）は、main に統合しても**本番には自動では載りません**。本番の Cloud Run・Firestore のルール・Hosting を**同時に**切り替える必要があります（[docs/deploy.md](docs/deploy.md) の「Kumu 2.0 を本番に出すとき」）。ステージングの手順は [docs/staging.md](docs/staging.md)。
+- デプロイの手順は [docs/deploy.md](docs/deploy.md)、ステージングは [docs/staging.md](docs/staging.md)。
 
 ## 何をするか（Unified Semantic Safety Architecture）
 
@@ -66,9 +66,12 @@ flowchart LR
 | 本物の画面のスクリプトでの通しテスト（偽の AI） | 38 項目 OK（意図の確認・訳し直し・発言者の確認・未解決事項・teach-back） |
 | 本物のブラウザ（Chromium）での見た目（PC・スマホ） | 18 / 18 PASS（横スクロールなし・押しやすさ・カードの幅） |
 | ルール層の照合（AI を使わない実測） | 誤りを入れた訳 13 / 20 を検出、正しい訳の誤警報 0 / 20 |
+| 本物の Gemini で通常の翻訳（A）と Kumu（D）を比較（架空の 108 件、11/10） | 重大な誤訳の検出 0/20 → **20/20**、正しい訳への誤警告 **0/20**（同じ 20 件×3 回で 0/60）、曖昧な意図を確認せずに送信 8/8 → **0/8**、不要な確認 0/17、理解の食い違いの検出 10/10。応答時間の中央値 1.6 秒 → 6.4 秒 |
 | 以前の確認質問（本物の Gemini、11/8） | Gemini 34 / 34 / 37、単語リスト 18（40 文×3 回） |
 
-**まだ測っていないもの:** 本物の Gemini での 4 方式の比較（`eval/compare.py --live`、100 件を用意済み）と処理時間、本物のルールエンジンでのルールの確認、ステージングへのデプロイ、医師による医学的妥当性の評価、臨床的な有効性。詳しくは [EVALUATION.md](EVALUATION.md)。
+発表用の表は [docs/presentation-assets/FINAL_EVAL_TABLE.md](docs/presentation-assets/FINAL_EVAL_TABLE.md)。正解は開発チームが決めたもので、誤訳は人工的に入れたもの。
+
+**まだ測っていないもの:** 医師による医学的妥当性の評価、実際の患者での評価、臨床的な有効性。詳しくは [EVALUATION.md](EVALUATION.md)。
 
 ## 動かす
 
@@ -96,7 +99,10 @@ python eval/compare.py --live --pivot              # 本物の Gemini で 4 方�
 | `firestore.rules` | ルール（端末は送信済みにできない） |
 | `tests/` `test_server.py` `web/clinical.test.mjs` | テスト |
 | `devtools/` | ローカル開発サーバー・偽の AI・ルールの書き写し・画面の通しテスト・ブラウザでの確認（本番には載らない） |
-| `eval/` | 比較評価（100 件・4 方式）・ルール層の実測・以前の評価 |
+| `stt.py` | 音声 → 文字（Speech-to-Text v2 / Chirp 3） |
+| `smoke.py` | デプロイした API を本物の Firebase・Gemini で端から端まで通す確認 |
+| `eval/` | 比較評価（108 件・4 方式）・ルール層の実測・以前の評価 |
+| `test.py` `bench.py` | 以前の版（11/6〜8）のプロンプト回帰テストと待ち時間の比較 |
 
 ## チーム Xingularity
 
