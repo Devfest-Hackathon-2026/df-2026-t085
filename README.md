@@ -43,18 +43,7 @@ Kumu は Gemini と、プログラムで作った安全装置（Safety Gate）�
 
 ## 構成
 
-```mermaid
-flowchart LR
-  P[患者のスマホ] --> H[Firebase Hosting]
-  D[医師の PC] --> H
-  P <-- onSnapshot --> F[(Cloud Firestore)]
-  D <-- onSnapshot --> F
-  P -- 送信操作 --> R[Cloud Run<br/>Safety Gate・USSA]
-  D -- 送信操作 --> R
-  R --> S[Speech-to-Text v2<br/>Chirp 3]
-  R -- Source Agent・翻訳・照合・監査<br/>JSON Schema --> G[Vertex AI<br/>Gemini 3.8 Flash]
-  R -- 送るのはサーバーだけ --> F
-```
+<p align="center"><img src="docs/architecture.png" width="900" alt="Kumu のアーキテクチャ（Firebase Hosting・Authentication・Firestore、Cloud Run、Speech-to-Text v2、Vertex AI Gemini）"></p>
 
 詳しくは [ARCHITECTURE.md](ARCHITECTURE.md)（コンポーネント・状態遷移・Safety Gate）、判断の理由は [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md)。
 
