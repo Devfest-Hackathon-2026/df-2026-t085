@@ -16,15 +16,18 @@ from google.genai import types
 # global は Gemini 3.8 Flash の公式の提供先（GA）。処理する場所は保証されないので、実データでは us / eu などを検討する
 PROJECT = os.environ.get("UNSAID_VERTEX_PROJECT", "unsaid-devfest")
 LOCATION = os.environ.get("UNSAID_VERTEX_LOCATION", "global")
-MODEL = os.environ.get("UNSAID_MODEL", "gemini-3.8-flash")
-# translate だけ軽いモデルに替えて速度を比べられるようにしておく（例: Flash-Lite 系）
-TRANSLATE_MODEL = os.environ.get("TRANSLATE_MODEL", MODEL)
-# USSA の役割ごとのモデル（Cloud Run の環境変数で替えられる）。既定はすべて同じモデル。
+# 使うモデル。Cloud Run の環境変数 GEMINI_MODEL（main と同じ名前）か UNSAID_MODEL で替えられる
+# （どれを選ぶかの根拠は eval/compare_models.py）
+MODEL = os.environ.get("UNSAID_MODEL") or os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+# 役割ごとのモデル（Cloud Run の環境変数で替えられる）。空なら呼ぶたびに MODEL を使う（_call の model or MODEL。
+# eval/compare_models.py が MODEL を差し替えて比べられるように、import の時点では決めない）。
+# translate だけ軽いモデルに替えて速度を比べる（例: Flash-Lite 系）。
 # 検証（VERIFY_MODEL）を翻訳と別のモデルにすると、同じ誤りを共有しにくくなる（それでも一致は正しさの証明ではない）。
 # 重要な意味の検証を軽いモデルにするのは、実測で精度が落ちないと分かるまでしない（DESIGN_DECISIONS.md）
-SOURCE_MODEL = os.environ.get("SOURCE_MODEL", MODEL)
-VERIFY_MODEL = os.environ.get("VERIFY_MODEL", MODEL)
-AUDIT_MODEL = os.environ.get("AUDIT_MODEL", MODEL)
+TRANSLATE_MODEL = os.environ.get("TRANSLATE_MODEL", "")
+SOURCE_MODEL = os.environ.get("SOURCE_MODEL", "")
+VERIFY_MODEL = os.environ.get("VERIFY_MODEL", "")
+AUDIT_MODEL = os.environ.get("AUDIT_MODEL", "")
 # 1回の待ち時間の上限と、超えたときの再試行回数。
 # 実測では普段 2〜7 秒、まれに 40〜70 秒かかる外れ値があったため、待たずに打ち直す
 TIMEOUT_SEC = 12
@@ -120,8 +123,9 @@ def _status(e):
 _hedge_pool = ThreadPoolExecutor(max_workers=32)
 
 
-def _call(system_file, schema_file, payload, model=MODEL):
+def _call(system_file, schema_file, payload, model=None):
     """Gemini を1回呼ぶ。HEDGE_SEC を過ぎても返らなければ、同じ依頼をもう1本投げて先に成功した方を返す。"""
+    model = model or MODEL  # 呼ぶたびに読む（eval/compare_models.py が MODEL を差し替えて比べる）
     if HEDGE_SEC <= 0:
         return _call_once(system_file, schema_file, payload, model)
     start = time.time()
@@ -143,7 +147,8 @@ def _call(system_file, schema_file, payload, model=MODEL):
     raise err
 
 
-def _call_once(system_file, schema_file, payload, model=MODEL):
+def _call_once(system_file, schema_file, payload, model=None):
+    model = model or MODEL
     start = time.time()
     timeouts = busy = 0
     while True:
@@ -167,6 +172,8 @@ def _call_once(system_file, schema_file, payload, model=MODEL):
                 "attempt": attempt,
                 "thoughts": getattr(u, "thoughts_token_count", None),
                 "out_tokens": getattr(u, "candidates_token_count", None),
+                "in_tokens": getattr(u, "prompt_token_count", None),
+                "model": model,
             }
             return out, time.time() - start
         except Exception as e:
@@ -286,12 +293,12 @@ def translate(original, source_lang, target_lang, direction, clarification=None,
     for k, v in (("turns", turns), ("confirmed_intent", confirmed_intent), ("fix", fix)):
         if v:
             payload[k] = v
-    return _call("prompts/translate_system.txt", "schemas/translate.json", model=TRANSLATE_MODEL, payload=payload)
+    return _call("prompts/translate_system.txt", "schemas/translate.json", model=TRANSLATE_MODEL or None, payload=payload)
 
 
 def source_agent(utterance, speaker, speaker_lang, listener_lang, turns=None):
     """Source Agent: 発話意図（文脈で決まるか・本人に聞くべきか）と、原文の意味の枠（Semantic Bridge）。検証は ussa.build_intent。"""
-    return _call("prompts/source_system.txt", "schemas/source.json", model=SOURCE_MODEL, payload={
+    return _call("prompts/source_system.txt", "schemas/source.json", model=SOURCE_MODEL or None, payload={
         "speaker": speaker, "speaker_lang": _lang(speaker_lang), "listener_lang": _lang(listener_lang),
         "utterance": utterance, "context": turns or [],
     })
@@ -299,13 +306,13 @@ def source_agent(utterance, speaker, speaker_lang, listener_lang, turns=None):
 
 def extract_frame(text, lang, speaker):
     """Verification Engine の B: 訳文だけから、独立に意味の枠を取る（原文は渡さない）。"""
-    return _call("prompts/frame_system.txt", "schemas/frame_extract.json", model=VERIFY_MODEL,
+    return _call("prompts/frame_system.txt", "schemas/frame_extract.json", model=VERIFY_MODEL or None,
                  payload={"lang": _lang(lang), "speaker": speaker, "text": text})
 
 
 def compare_meaning(source, source_lang, translation, target_lang, speaker, confirmed_intent=None, doctor_lang="ja"):
     """Verification Engine の C: 原文と訳文を直接照合する。翻訳した側の判断（意図の推測など）は渡さない。"""
-    return _call("prompts/verify_system.txt", "schemas/verify_compare.json", model=VERIFY_MODEL, payload={
+    return _call("prompts/verify_system.txt", "schemas/verify_compare.json", model=VERIFY_MODEL or None, payload={
         "source_lang": _lang(source_lang), "target_lang": _lang(target_lang), "doctor_lang": _lang(doctor_lang),
         "speaker": speaker, "source": source, "translation": translation, "confirmed_intent": confirmed_intent,
     })
@@ -313,7 +320,7 @@ def compare_meaning(source, source_lang, translation, target_lang, speaker, conf
 
 def audit(latest, memory, open_issues, closed_issues, doctor_lang="ja"):
     """Conversation Auditor: 最新の発言と、記憶（重要な発言の要点）と、未解決事項だけを渡す（会話全体は渡さない）。"""
-    return _call("prompts/audit_system.txt", "schemas/audit.json", model=AUDIT_MODEL, payload={
+    return _call("prompts/audit_system.txt", "schemas/audit.json", model=AUDIT_MODEL or None, payload={
         "doctor_lang": _lang(doctor_lang), "latest": latest, "memory": memory,
         "open_issues": open_issues, "closed_issues": closed_issues,
     })

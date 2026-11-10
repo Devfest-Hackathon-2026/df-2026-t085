@@ -1,4 +1,6 @@
-# Kumu
+<p align="center"><img src="docs/brand/kumu-banner.png" width="800" alt="Kumu（くむ）多言語の問診を、訳す前に確かめる。"></p>
+
+# Kumu（くむ）
 
 **言葉を訳すだけでなく、診察で起こる「伝わったつもり」を防ぐ。**
 *Beyond translation. Toward mutual understanding.*（カテゴリ：医療・福祉）
@@ -11,7 +13,7 @@ Kumu は Gemini と、プログラムで作った安全装置（Safety Gate）�
 確認で解消できるものは解消し、**解消できないものは確定させずに人に見せます**。診断はしません。
 
 - 画面（医師 PC）：https://unsaid-devfest.web.app/doctor.html （患者は QR をスマホで読むだけ）
-- この README の機能は `feature/unsaid-clinical-meaning` ブランチにあり、上の本番（main）にはまだ載っていません。ステージングの手順は [docs/staging.md](docs/staging.md)。
+- この README の機能（Kumu 2.0・USSA）は、main に統合しても**本番には自動では載りません**。本番の Cloud Run・Firestore のルール・Hosting を**同時に**切り替える必要があります（[docs/deploy.md](docs/deploy.md) の「Kumu 2.0 を本番に出すとき」）。ステージングの手順は [docs/staging.md](docs/staging.md)。
 
 ## 何をするか（Unified Semantic Safety Architecture）
 

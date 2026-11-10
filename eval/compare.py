@@ -265,7 +265,7 @@ def report(R, mode, started, pivot):
     neg = [r for r in pr if r["error_type"] == "negation" and "injected" in r]
     inj = [r for r in pr if "injected" in r]
     L = ["# 比較評価: A 通常の翻訳 / B ＋意図の解析 / C ＋Semantic Bridge・検証 / D Kumu 完全版", "",
-         f"- 実行: {started}（{'本物の Gemini: ' + unsaid_ai.MODEL + '（役割ごと: source=' + unsaid_ai.SOURCE_MODEL + ', verify=' + unsaid_ai.VERIFY_MODEL + ', audit=' + unsaid_ai.AUDIT_MODEL + '）' if mode == 'live' else '偽の AI（仕組みの確認だけ。数値は性能ではない）'}）",
+         f"- 実行: {started}（{'本物の Gemini: ' + unsaid_ai.MODEL + '（役割ごと: source=' + (unsaid_ai.SOURCE_MODEL or unsaid_ai.MODEL) + ', verify=' + (unsaid_ai.VERIFY_MODEL or unsaid_ai.MODEL) + ', audit=' + (unsaid_ai.AUDIT_MODEL or unsaid_ai.MODEL) + '）' if mode == 'live' else '偽の AI（仕組みの確認だけ。数値は性能ではない）'}）",
          f"- 症例: 意図 {len(R['intent'])}・医学的な曖昧さ {len(R['medical'])}・否定/数量/日時/単位 {len(R['precision'])}・"
          f"説明不足 {len(R['explanation'])}・理解の相違 {len(R['understanding'])}・teach-back {len(R['teachback'])}"
          f"（計 {sum(len(v) for v in R.values())}、すべて架空）。失敗した症例 {errs} 件",
@@ -361,8 +361,8 @@ def main_():
              "teachback": list(ex.map(run_teachback, C["teachback"]))}
     md = report(R, "live" if a.live else "mock", started, a.pivot)
     if a.live:
-        meta = {"started": started, "model": unsaid_ai.MODEL, "source_model": unsaid_ai.SOURCE_MODEL,
-                "verify_model": unsaid_ai.VERIFY_MODEL, "audit_model": unsaid_ai.AUDIT_MODEL,
+        meta = {"started": started, "model": unsaid_ai.MODEL, "source_model": (unsaid_ai.SOURCE_MODEL or unsaid_ai.MODEL),
+                "verify_model": (unsaid_ai.VERIFY_MODEL or unsaid_ai.MODEL), "audit_model": (unsaid_ai.AUDIT_MODEL or unsaid_ai.MODEL),
                 "translation_retries": main.TRANSLATION_RETRIES, "cases": {k: len(v) for k, v in R.items()}}
         name = "compare_results_subset" if a.subset else "compare_results"
         meta.update(project=unsaid_ai.PROJECT, location=unsaid_ai.LOCATION, subset=a.subset)

@@ -52,6 +52,45 @@ def analyze(api, sid, token, text):
             "facts": [f.get("doctor_gloss") for f in body.get("facts", [])]}
 
 
+def wait_shown(api, sid, token, text):
+    """患者が実際に待つ時間: 発言を作ってから、status が analyzing でなくなる（確認質問か逆翻訳が画面に出る）まで。
+    /analyze の応答は医師用の facts まで待つので、それより短い。"""
+    mid = "w-" + uuid.uuid4().hex[:8]
+    smoke.doc_create(f"sessions/{sid}/messages", mid, {"from": "patient", "original": text, "status": "analyzing"},
+                     token, "発言")
+    t = time.time()
+    with ThreadPoolExecutor(1) as ex:
+        api_call = ex.submit(smoke.http, "POST", api.rstrip("/") + "/analyze", {"sessionId": sid, "messageId": mid}, token)
+        shown = None
+        while time.time() - t < 90:
+            code, body = smoke.http("GET", f"{smoke.FS}/sessions/{sid}/messages/{mid}", token=token)
+            st = body.get("fields", {}).get("status", {}).get("stringValue")
+            if st and st != "analyzing":
+                shown = time.time() - t
+                break
+            time.sleep(0.25)
+        code, _ = api_call.result()
+    return {"shown": shown and round(shown, 2), "api": round(time.time() - t, 2), "status": st, "code": code}
+
+
+def latency(api, key, n, workers):
+    """--latency N: 確認質問が出る文と出ない文を交互に N 回流し、患者の待ち時間を測る。"""
+    texts = [DEMO_TEXT, "I'm allergic to penicillin.", "I feel dizzy when I stand up.", "我没有发烧。"]
+    sessions, out = {}, []
+    for i in range(0, n, 40):  # 1 session の呼び出し上限（MAX_CALLS_PER_SESSION）に当たらないように分ける
+        sessions[i] = open_session(key, "en")
+    jobs = [(texts[i % len(texts)], *sessions[i - i % 40]) for i in range(n)]
+    with ThreadPoolExecutor(workers) as ex:
+        out = list(ex.map(lambda j: {"text": j[0], **wait_shown(api, j[1], j[2], j[0])}, jobs))
+    shown = sorted(r["shown"] for r in out if r["shown"])
+    q = statistics.quantiles(shown, n=20)
+    summary = {"n": n, "ok": len(shown), "median": round(statistics.median(shown), 1), "p90": round(q[17], 1),
+               "p95": round(q[18], 1), "max": round(max(shown), 1), "over8s": sum(s > 8 for s in shown)}
+    (OUT / "latency.json").write_text(json.dumps({"summary": summary, "runs": out}, ensure_ascii=False, indent=1),
+                                      encoding="utf-8")
+    print(json.dumps(summary, ensure_ascii=False))
+
+
 def correct_gemini(case, r):
     if "error" in r:
         return False
@@ -73,7 +112,10 @@ def main():
     p.add_argument("--key", required=True)
     p.add_argument("--demo", type=int, default=20, help="デモの1文を流す回数（0 で省く）")
     p.add_argument("--workers", type=int, default=4)
+    p.add_argument("--latency", type=int, default=0, help="評価の代わりに、患者の待ち時間を N 回測る")
     a = p.parse_args()
+    if a.latency:
+        return latency(a.api, a.key, a.latency, min(a.workers, 2))
 
     sessions = {lang: open_session(a.key, lang) for lang in sorted({c["lang"] for c in CASES})}
     jobs = [(c, *sessions[c["lang"]]) for c in CASES]
