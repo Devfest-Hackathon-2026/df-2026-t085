@@ -16,7 +16,7 @@ import {
   runTransaction, getDocFromServer,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { transcribe as postWav } from "./stt.js";
-import { firebaseConfig, API_URL, FIRESTORE_DB } from "./firebase-config.js";
+import { firebaseConfig, API_URL, FIRESTORE_DB, ACCESS_GATE } from "./firebase-config.js";
 import qrcode from "./vendor/qrcode.js";
 
 export { Recorder } from "./stt.js";
@@ -37,12 +37,16 @@ const msgRef = (sid, mid) => doc(db, "sessions", sid, "messages", mid);
 // 患者が選べる言語（unsaid_ai.py の LANGS / firestore.rules と同じ）
 export const PATIENT_LANGS = ["en", "zh-CN", "vi"];
 
+// 消える期限（Firestore の TTL）。端末が作る文書にも最初から付ける（firestore.rules の expiresSoon）。サーバーが書くたびに延ばす
+const TTL_MS = 24 * 3600 * 1000;
+const expireAt = () => new Date(Date.now() + TTL_MS);
+
 // 医師の端末: session を作り、id を返す。作った人が医師（members[0]）になる（firestore.rules）。
 // patientLang は患者が QR から参加するときに決まる（それまで null）
 export async function createSession() {
   const user = await login();
   const ref = await addDoc(collection(db, "sessions"), {
-    patientLang: null, doctorLang: "ja", members: [user.uid], createdAt: serverTimestamp(),
+    patientLang: null, doctorLang: "ja", members: [user.uid], createdAt: serverTimestamp(), expireAt: expireAt(),
   });
   return ref.id;
 }
@@ -156,6 +160,30 @@ async function post(path, body, { allow409 = false } = {}) {
   throw new ApiError(res.status, out.detail ?? res.statusText);
 }
 
+// 独立ステージングだけ: 医師が参加コードを入れて、この問診で Gemini を使えるようにする（main.py の /staging/unlock）。
+// コードはこのタブの sessionStorage にだけ置く（次の問診で聞き直さないため）。違えば消して聞き直す。本番では何もしない
+const CODE_KEY = "kumu:stagingCode";
+export async function unlockStaging(sid, ask = (msg) => window.prompt(msg)) {
+  if (!ACCESS_GATE) return;
+  let msg = "ステージングの参加コードを入力してください";
+  for (let i = 0; i < 3; i++) {
+    let code = null;
+    try { code = sessionStorage.getItem(CODE_KEY); } catch { /* 使えなくても聞けばよい */ }
+    code ||= ask(msg);
+    if (!code) throw new ApiError(403, "参加コードが入力されませんでした");
+    try {
+      await post("/staging/unlock", { sessionId: sid, code: code.trim() });
+      try { sessionStorage.setItem(CODE_KEY, code.trim()); } catch { /* 次の問診でもう一度聞く */ }
+      return;
+    } catch (e) {
+      try { sessionStorage.removeItem(CODE_KEY); } catch { /* なし */ }
+      if (e.status !== 403) throw e;
+      msg = "参加コードが違います。もう一度入力してください";
+    }
+  }
+  throw new ApiError(403, "参加コードが違います");
+}
+
 const callApi = (path, sid, mid) => post(path, mid ? { sessionId: sid, messageId: mid } : { sessionId: sid }, { allow409: true });
 
 // 発言する（from は "patient" / "doctor"）。吹き出しは addDoc の時点で watchMessages に出る。
@@ -167,7 +195,7 @@ const callApi = (path, sid, mid) => post(path, mid ? { sessionId: sid, messageId
 // （問診メモ・会話全体の見直し）まで待つので、二重押しの防止はここで解いてよい（次の発言をすぐ書ける）
 export async function say(sid, from, text, reply = null, onCreated = null) {
   const ref = await addDoc(collection(db, "sessions", sid, "messages"), {
-    from, original: text, status: "analyzing", createdAt: serverTimestamp(), ...(reply ?? {}),
+    from, original: text, status: "analyzing", createdAt: serverTimestamp(), expireAt: expireAt(), ...(reply ?? {}),
   });
   onCreated?.(ref.id);
   await callApi(from === "patient" ? "/analyze" : "/translate", sid, ref.id).catch((e) => {

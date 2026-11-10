@@ -1,0 +1,12 @@
+{
+  "hosting": {
+    "public": "web",
+    "ignore": ["firebase.json", "firebase.staging.json", "firebase.kumu.json", "**/.*", "**/*.test.mjs", "stt-test.html"],
+    "headers": [
+      { "source": "**/*.@(html|js|css|json)", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+    ]
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  }
+}

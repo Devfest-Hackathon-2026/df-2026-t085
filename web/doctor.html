@@ -59,6 +59,7 @@ async function begin() {
   try {
     sid = await unsaid.createSession();
     history.replaceState(null, "", `?s=${sid}`);
+    await unsaid.unlockStaging(sid);  // 独立ステージングだけ（本番では何もしない）
     showQr();
   } catch (e) { fail(e); }
 }

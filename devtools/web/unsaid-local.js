@@ -30,6 +30,9 @@ async function dev(path, body) {
   return out;
 }
 
+// 独立ステージングの参加コード（web/unsaid.js）。ローカルの開発サーバーには無いので何もしない
+export async function unlockStaging() {}
+
 export async function createSession() {
   const user = await login();
   const r = await dev("/_dev/add", { path: "sessions", data: { patientLang: null, doctorLang: "ja", members: [user.uid], createdAt: TS } });

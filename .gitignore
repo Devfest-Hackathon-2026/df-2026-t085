@@ -10,3 +10,6 @@ node_modules
 skills-lock.json
 .pytest_cache/
 .ruff_cache/
+
+# デプロイ時に作る版の印（devtools/deploy_kumu_staging.sh）
+web/build.json

@@ -113,3 +113,33 @@ Cloud Run の URL を、ホスト名（`kumu-devfest-2026--…web.app`）で切�
 
 サービスアカウントの権限（Cloud Run の実行アカウントに Vertex AI ユーザー・Firestore ユーザー・Speech-to-Text）は、
 自分のプロジェクトの中の変更。チームのプロジェクトの権限は変えない。
+
+### B の安全の設定（2026-11-10 追加）
+
+**参加者の制限**（匿名ログインだけでは Gemini を使えない）:
+- Cloud Run に `STAGING_ACCESS_SHA256`（参加コードの SHA-256）を渡すと、Gemini・Speech-to-Text を使う API は、
+  医師が問診ごとに参加コードで解錠する（`/staging/unlock`）まで 403。患者・第三者は解錠できない。間違いは問診ごとに 5 回まで
+- 解錠の印（`stagingAccess`）はサーバーだけが書ける（ルールで端末の書き込みを禁止。エミュレーターのテストで確認）
+- 参加コードは Git に置かない。医師の画面で 1 回入れると、そのタブの sessionStorage にだけ残る
+- CORS（`ALLOWED_ORIGINS`）と推測しにくい URL は補助で、認証の代わりにしない
+
+**回数・同時実行の上限**: 問診ごと `MAX_CALLS_PER_SESSION=80`、プロジェクト全体で 1 日（UTC）`DAILY_CALL_LIMIT=300`（Firestore の `_limits/` に数える）、
+Cloud Run `--max-instances 1 --concurrency 20`。
+
+**費用の上限**: Vertex AI（Agent Platform）と Cloud Run に spend cap の予算（Cloud Billing → 予算とアラート →「Spend cap enforcement」。
+プロジェクト 1 つ・サービス 1 つずつ。月の 1 日からの総額で数える。止まるまで少し遅れる）。ほかのサービス（Cloud Build・Artifact Registry・
+Firestore・Hosting・Speech-to-Text）は spend cap の対象外なので、プロジェクト全体にアラートだけの予算を置く。
+
+**TTL**: `sessions`・`messages`・`_limits` の `expireAt`（コレクショングループ）に TTL ポリシー。端末が作る問診と発言にも最初から `expireAt` を付ける
+（ルールで必須。48 時間以内）。サーバーが書くたびに 24 時間後へ延ばす。TTL の削除は期限の後すぐではなく、通常 24 時間以内。
+
+**テストの後の片付け**（課金が続くものから）:
+
+| もの | 扱い |
+|---|---|
+| Cloud Run `kumu-api-staging` | 削除（`gcloud run services delete`） |
+| Artifact Registry `cloud-run-source-deploy` のイメージ | リポジトリごと削除（保存の料金が続く） |
+| Cloud Storage のソースのバケット（`run-sources-…`） | 削除 |
+| Firestore のデータ | 診察終了（/end）か TTL で消える。空のデータベースは残してよい |
+| Hosting | `firebase hosting:disable`（画面を止める） |
+| サービスアカウント・有効にした API・spend cap | 料金は無い。残してよい（消すなら最後） |

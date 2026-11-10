@@ -29,13 +29,21 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
     }
     function patientLangs() { return ['en', 'zh-CN', 'vi']; }
+    // 端末が作る文書にも、最初から消える期限（TTL の expireAt）を付けさせる。API が一度も呼ばれなくても残らないように。
+    // 端末の時計のずれを見込んで「今より後、48 時間以内」。以後はサーバーが書くたびに延ばす（main._expire_at）
+    function expiresSoon() {
+      return request.resource.data.expireAt is timestamp
+        && request.resource.data.expireAt > request.time
+        && request.resource.data.expireAt <= request.time + duration.value(48, 'h');
+    }
 
     match /sessions/{sessionId} {
       allow read: if signedIn() && request.auth.uid in resource.data.members;
       // 医師が作る: 自分1人だけを members に入れ、patientLang は null（患者が参加時に決める）。
       // createdAt はサーバーの時刻だけ（端末が未来の時刻を書いて「30分以内」をすり抜けられないように）
       allow create: if signedIn()
-        && request.resource.data.keys().hasOnly(['patientLang', 'doctorLang', 'members', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['patientLang', 'doctorLang', 'members', 'createdAt', 'expireAt'])
+        && expiresSoon()
         && request.resource.data.members == [request.auth.uid]
         && request.resource.data.patientLang == null
         && request.resource.data.doctorLang == 'ja'
@@ -59,7 +67,8 @@ service cloud.firestore {
         // 質問が本当に医師の確認質問か・選択肢が合うかは API（main.py の _reply_target）が確かめる。
         // 確認質問・理解の確認の発言そのもの（kind 付き）と、意味の解析・状態（meaning / teachback）はサーバーだけが書く。
         allow create: if isMember(sessionId)
-          && request.resource.data.keys().hasOnly(['from', 'original', 'status', 'createdAt', 'replyTo', 'answer'])
+          && request.resource.data.keys().hasOnly(['from', 'original', 'status', 'createdAt', 'expireAt', 'replyTo', 'answer'])
+          && expiresSoon()
           && ((request.resource.data.from == 'doctor' && isDoctor(sessionId))
             || (request.resource.data.from == 'patient' && isPatient(sessionId)))
           && request.resource.data.status == 'analyzing'

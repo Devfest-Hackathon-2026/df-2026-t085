@@ -39,12 +39,23 @@ beforeEach(async () => {
     await setDoc(doc(db, "sessions", SID, "messages", "rev1"), { from: "patient", original: "没事", status: "needs_review" });
     await setDoc(doc(db, "sessions", SID, "messages", "conf1"), { from: "patient", original: "没事", status: "confirmed" });
     await setDoc(doc(db, "sessions", SID, "messages", "dr1"), { from: "doctor", original: "大丈夫です", status: "analyzing" });
+    // 別の問診（別の医師・患者）
+    await setDoc(doc(db, "sessions", "other"), {
+      members: ["doc2", "pat2"], patientLang: "en", doctorLang: "ja", createdAt: Timestamp.now(),
+    });
+    await setDoc(doc(db, "sessions", "other", "messages", "o1"), { from: "patient", original: "I'm fine", status: "sent" });
+    // 1人だけの、参加待ちの別の問診
+    await setDoc(doc(db, "sessions", "waiting"), {
+      members: ["doc3"], patientLang: null, doctorLang: "ja", createdAt: Timestamp.now(),
+    });
+    await setDoc(doc(db, "_limits", "calls-20261110"), { n: 3 });
   });
 });
 
 const as = (uid) => env.authenticatedContext(uid).firestore();
 const msgs = (db, id) => doc(db, "sessions", SID, "messages", id);
-const base = { original: "没事", status: "analyzing", createdAt: serverTimestamp() };
+const soon = () => Timestamp.fromMillis(Date.now() + 24 * 3600 * 1000);  // 画面と同じ（web/unsaid.js の expireAt）
+const base = { original: "没事", status: "analyzing", createdAt: serverTimestamp(), expireAt: soon() };
 
 test("画面が使う書き込みは通る", async () => {
   await assertSucceeds(setDoc(msgs(as("pat"), "n1"), { ...base, from: "patient" }));
@@ -139,4 +150,51 @@ test("直接書き込み: 医師も確認質問・理解の確認を自分で作
   await assertFails(setDoc(msgs(as("doc"), "y2"), { ...base, from: "doctor", kind: "clarify" }));
   await assertFails(setDoc(msgs(as("doc"), "y3"), { ...base, from: "doctor", kind: "teachback" }));
   await assertFails(setDoc(msgs(as("doc"), "y4"), { ...base, from: "doctor", translation: { text: "x" } }));
+});
+
+test("他の問診: 自分の問診のメンバーでも、別の問診は読めない・書けない・なりすませない", async () => {
+  for (const uid of ["doc", "pat", "stranger"]) {
+    const db = as(uid);
+    await assertFails(getDoc(doc(db, "sessions", "other")));
+    await assertFails(getDoc(doc(db, "sessions", "other", "messages", "o1")));
+    await assertFails(getDocFromServer(doc(db, "sessions", "other", "messages", "o1")));
+    await assertFails(setDoc(doc(db, "sessions", "other", "messages", `n-${uid}`), { ...base, from: "patient" }));
+    await assertFails(updateDoc(doc(db, "sessions", "other", "messages", "o1"), { original: "改ざん" }));
+    await assertFails(updateDoc(doc(db, "sessions", "other", "messages", "o1"), { status: "received" }));
+    await assertFails(updateDoc(doc(db, "sessions", "other"), { members: ["doc2", "pat2", uid] }));
+    await assertFails(updateDoc(doc(db, "sessions", "other"), { members: ["doc2", uid] }));
+  }
+  // 自分の問診は読める（上の失敗がルール以外の理由でないこと）
+  await assertSucceeds(getDoc(doc(as("pat"), "sessions", SID)));
+});
+
+test("一覧: sessions を条件なしに並べて他人の問診を探せない", async () => {
+  const { collection, getDocs, query, where } = await import("firebase/firestore");
+  await assertFails(getDocs(collection(as("stranger"), "sessions")));
+  await assertFails(getDocs(collection(as("doc"), "sessions")));
+  await assertFails(getDocs(query(collection(as("doc"), "sessions"), where("doctorLang", "==", "ja"))));
+});
+
+test("ステージングの解錠の印・1日の上限の数は、端末が書けない・読めない", async () => {
+  const ok = { patientLang: null, doctorLang: "ja", createdAt: serverTimestamp(), expireAt: soon() };
+  await assertSucceeds(setDoc(doc(as("d9"), "sessions", "new1"), { ...ok, members: ["d9"] }));
+  await assertFails(setDoc(doc(as("d9"), "sessions", "new2"), { ...ok, members: ["d9"], stagingAccess: true }));
+  await assertFails(updateDoc(doc(as("doc"), "sessions", SID), { stagingAccess: true }));
+  await assertFails(updateDoc(doc(as("doc3"), "sessions", "waiting"), { stagingAccess: true }));
+  await assertFails(getDoc(doc(as("doc"), "_limits", "calls-20261110")));
+  await assertFails(setDoc(doc(as("doc"), "_limits", "calls-20261110"), { n: 0 }));
+});
+
+test("TTL: 端末が作る問診と発言には、最初から消える期限（48時間以内）が要る", async () => {
+  const ok = { patientLang: null, doctorLang: "ja", createdAt: serverTimestamp() };
+  await assertFails(setDoc(doc(as("d8"), "sessions", "t1"), { ...ok, members: ["d8"] }));
+  await assertFails(setDoc(doc(as("d8"), "sessions", "t2"), { ...ok, members: ["d8"],
+    expireAt: Timestamp.fromMillis(Date.now() + 30 * 24 * 3600 * 1000) }));
+  await assertFails(setDoc(doc(as("d8"), "sessions", "t3"), { ...ok, members: ["d8"], expireAt: Timestamp.fromMillis(Date.now() - 1000) }));
+  await assertSucceeds(setDoc(doc(as("d8"), "sessions", "t4"), { ...ok, members: ["d8"], expireAt: soon() }));
+  const { expireAt, ...noTtl } = base;
+  assert.ok(expireAt);
+  await assertFails(setDoc(msgs(as("pat"), "t5"), { ...noTtl, from: "patient" }));
+  await assertFails(setDoc(msgs(as("pat"), "t6"), { ...noTtl, from: "patient", expireAt: "2099-01-01" }));
+  await assertSucceeds(setDoc(msgs(as("pat"), "t7"), { ...base, from: "patient" }));
 });

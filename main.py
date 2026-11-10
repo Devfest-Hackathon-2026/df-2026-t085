@@ -19,6 +19,8 @@
 
 状態の変わり方は clinical.py（AI のイベントで「医師確認済み」にはならない）。詳しい契約は docs/api.md、全体は ARCHITECTURE.md。
 """
+import hashlib
+import hmac
 import logging
 import os
 import threading
@@ -81,6 +83,15 @@ VERIFY_RETRIES = 1
 # 同じ人が同じ文をこの秒数以内にもう一度送ったら、二重送信として取り消す
 DUPLICATE_SEC = 10
 
+# ステージングの参加者の制限（本番では空のままで、何も変わらない）。
+# 匿名ログインだけでは誰でも Gemini を使えるので、問診ごとに医師が「参加コード」を入れて解錠するまで、
+# Gemini・Speech-to-Text を使う API（_session を通るもの）を 403 で止める。コードそのものはサーバーに置かず、SHA-256 だけを持つ。
+# 解錠した印（stagingAccess）は Admin SDK だけが書ける（firestore.rules の作成・更新で許すキーに入っていない）
+STAGING_ACCESS_SHA256 = os.environ.get("STAGING_ACCESS_SHA256", "").strip().lower()
+STAGING_UNLOCK_ATTEMPTS = 5          # 1つの問診で、コードを間違えてよい回数
+# プロジェクト全体で 1 日（UTC）に API を呼べる回数（_session を通るもの）。0 なら制限しない。Firestore の _limits/ に数える
+DAILY_CALL_LIMIT = int(os.environ.get("DAILY_CALL_LIMIT", "0"))
+
 @asynccontextmanager
 async def lifespan(app):
     # 最初の Gemini 呼び出しが遅いので、起動直後に裏で1回済ませておく
@@ -129,6 +140,11 @@ class MessageRef(BaseModel):
 
 class SessionRef(BaseModel):
     sessionId: str
+
+
+class StagingUnlock(BaseModel):
+    sessionId: str
+    code: str
 
 
 class ClarifySend(BaseModel):
@@ -231,10 +247,36 @@ def _session(session_id: str, uid: str):
     s_ref, session = _member_session(session_id, uid)
     if not session.get("patientLang"):
         raise HTTPException(409, "患者がまだ参加していません（QR から参加すると patientLang が決まります）")
+    if STAGING_ACCESS_SHA256 and session.get("stagingAccess") is not True:
+        raise HTTPException(403, "staging_locked: この問診はまだ参加コードで解錠されていません")
     if session.get("apiCalls", 0) >= MAX_CALLS_PER_SESSION:
         raise HTTPException(429, "この問診で使える回数を超えました。新しい問診を始めてください")
+    _count_daily_call()
     s_ref.update({"apiCalls": firestore.Increment(1), "expireAt": _expire_at()})
     return s_ref, session
+
+
+def _count_daily_call():
+    """プロジェクト全体の 1 日の上限（DAILY_CALL_LIMIT）。超えたら 429。数える文書は日ごとに分け、TTL で消える。"""
+    if DAILY_CALL_LIMIT <= 0:
+        return
+    day = datetime.now(timezone.utc).strftime("%Y%m%d")
+    ref = db().collection("_limits").document(f"calls-{day}")
+
+    if not ref.get().exists:  # その日の最初の 1 回（同時に作られても、数え漏れは最初の数回だけ）
+        ref.set({"n": 0, "expireAt": datetime.now(timezone.utc) + timedelta(days=2)})
+
+    def fn(datas):
+        if datas[0]["n"] >= DAILY_CALL_LIMIT:
+            raise HTTPException(429, "今日の利用回数の上限に達しました（ステージングの上限）")
+        return [{"n": datas[0]["n"] + 1}]
+    _tx([ref], fn)
+
+
+def staging_code_ok(code: str) -> bool:
+    if not STAGING_ACCESS_SHA256 or not isinstance(code, str) or not code:
+        return False
+    return hmac.compare_digest(hashlib.sha256(code.strip().encode()).hexdigest(), STAGING_ACCESS_SHA256)
 
 
 def _msg_ref(s_ref, message_id):
@@ -331,9 +373,13 @@ def _patient_translate(session, msg, clarification=None, context=None):
     return _translation(out, session["doctorLang"])
 
 
+# デプロイしたコミット（devtools/deploy_kumu_staging.sh が渡す）。画面・API・ルールの版のずれを外から確かめるため
+BUILD_COMMIT = os.environ.get("BUILD_COMMIT", "")
+
+
 @app.get("/health")  # Cloud Run は末尾が z のパス（/healthz など）を予約していて届かない
 def healthz():
-    return {"ok": True}
+    return {"ok": True, "commit": BUILD_COMMIT}
 
 
 @app.post("/analyze")
@@ -1645,6 +1691,34 @@ def issue_update(body: IssueAction, uid: str = Depends(current_uid)):
         return [{"audit": a}]
     _tx([s_ref], tx)
     return {"ok": True, "status": holder["issue"]["status"]}
+
+
+@app.post("/staging/unlock")
+def staging_unlock(body: StagingUnlock, uid: str = Depends(current_uid)):
+    """ステージングだけ: 医師が参加コードを入れて、この問診で Gemini を使えるようにする。本番（STAGING_ACCESS_SHA256 が空）では何もしない。
+    間違いは 1 つの問診で STAGING_UNLOCK_ATTEMPTS 回まで（数はトランザクションで数える）。"""
+    if not STAGING_ACCESS_SHA256:
+        return {"unlocked": True, "required": False}
+    s_ref, _ = _doctor_session(body.sessionId, uid)
+    good = staging_code_ok(body.code)
+
+    result = {}
+
+    def fn(datas):
+        cur = datas[0]
+        if cur.get("stagingAccess") is True:
+            result["ok"] = True
+            return [None]
+        tries = cur.get("stagingAttempts", 0)
+        if tries >= STAGING_UNLOCK_ATTEMPTS:
+            raise HTTPException(429, "参加コードの入力回数の上限です。新しい問診を始めてください")
+        result["ok"] = good
+        return [{"stagingAccess": True, "expireAt": _expire_at()} if good
+                else {"stagingAttempts": tries + 1, "expireAt": _expire_at()}]
+    _tx([s_ref], fn)
+    if not result["ok"]:
+        raise HTTPException(403, "参加コードが違います")
+    return {"unlocked": True, "required": True}
 
 
 @app.post("/end")
